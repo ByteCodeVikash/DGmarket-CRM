@@ -16,6 +16,7 @@ import {
   Edit,
   User,
   Loader2,
+  UserCheck,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -102,6 +103,7 @@ export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const pageSize = 20;
 
   const buildLeadsUrl = () => {
@@ -196,6 +198,22 @@ export default function LeadsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       setDeleteId(null);
       toast({ title: "Lead deleted", description: "Lead has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: async (leadId: string) => {
+      const response = await apiRequest("POST", `/api/leads/${leadId}/convert`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setConvertingLead(null);
+      toast({ title: "Lead converted", description: "Lead has been converted to a client successfully." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -314,6 +332,15 @@ export default function LeadsPage() {
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
+              {lead.status !== "converted" && (
+                <DropdownMenuItem 
+                  onClick={() => setConvertingLead(lead)}
+                  data-testid={`button-convert-${lead.id}`}
+                >
+                  <UserCheck className="mr-2 h-4 w-4" />
+                  Convert to Client
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive"
@@ -649,6 +676,30 @@ export default function LeadsPage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={convertingLead !== null} onOpenChange={() => setConvertingLead(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert Lead to Client</AlertDialogTitle>
+            <AlertDialogDescription>
+              Convert "{convertingLead?.name}" to a client? This will create a new client record and mark the lead as converted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-convert">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => convertingLead && convertMutation.mutate(convertingLead.id)}
+              data-testid="button-confirm-convert"
+            >
+              {convertMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Convert"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
