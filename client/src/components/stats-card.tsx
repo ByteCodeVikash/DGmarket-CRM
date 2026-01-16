@@ -16,17 +16,17 @@ interface StatsCardProps {
 
 export function StatsCard({ title, value, description, icon: Icon, trend, className }: StatsCardProps) {
   return (
-    <Card className={cn("", className)}>
+    <Card className={cn("border-slate-200/80 bg-white/70 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-200", className)}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-slate-600">{title}</p>
             <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold">{value}</p>
+              <p className="text-2xl font-bold text-slate-900">{value}</p>
               {trend && (
                 <span
                   className={cn(
-                    "text-xs font-medium",
+                    "text-xs font-semibold",
                     trend.isPositive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                   )}
                 >
@@ -35,10 +35,10 @@ export function StatsCard({ title, value, description, icon: Icon, trend, classN
               )}
             </div>
             {description && (
-              <p className="text-xs text-muted-foreground">{description}</p>
+              <p className="text-xs text-slate-500">{description}</p>
             )}
           </div>
-          <div className="rounded-lg bg-primary/10 p-2.5">
+          <div className="rounded-xl bg-primary/10 p-3">
             <Icon className="h-5 w-5 text-primary" />
           </div>
         </div>

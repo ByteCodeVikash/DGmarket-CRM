@@ -193,9 +193,9 @@ export default function DashboardPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Monthly Leads Chart */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Lead Trends</CardTitle>
-              <CardDescription>Monthly lead acquisition over time</CardDescription>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg font-semibold text-slate-900">Lead Trends</CardTitle>
+              <CardDescription className="text-slate-500">Monthly lead acquisition over time</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[280px]">
@@ -246,9 +246,9 @@ export default function DashboardPage() {
 
           {/* Leads by Source */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Leads by Source</CardTitle>
-              <CardDescription>Distribution of lead sources</CardDescription>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg font-semibold text-slate-900">Leads by Source</CardTitle>
+              <CardDescription className="text-slate-500">Distribution of lead sources</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex h-[280px] items-center gap-8">
@@ -299,10 +299,10 @@ export default function DashboardPage() {
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Recent Leads */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
               <div>
-                <CardTitle className="text-base font-semibold">Recent Leads</CardTitle>
-                <CardDescription>Latest leads added to the system</CardDescription>
+                <CardTitle className="text-lg font-semibold text-slate-900">Recent Leads</CardTitle>
+                <CardDescription className="text-slate-500">Latest leads added to the system</CardDescription>
               </div>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/leads" data-testid="link-view-all-leads">
@@ -350,10 +350,10 @@ export default function DashboardPage() {
 
           {/* Upcoming Follow-ups */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
               <div>
-                <CardTitle className="text-base font-semibold">Upcoming Follow-ups</CardTitle>
-                <CardDescription>Scheduled calls and meetings</CardDescription>
+                <CardTitle className="text-lg font-semibold text-slate-900">Upcoming Follow-ups</CardTitle>
+                <CardDescription className="text-slate-500">Scheduled calls and meetings</CardDescription>
               </div>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/follow-ups" data-testid="link-view-all-followups">

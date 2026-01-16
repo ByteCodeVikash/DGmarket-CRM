@@ -21,6 +21,8 @@ import {
   Archive,
   Trash2,
   Copy,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -71,6 +73,7 @@ export default function WhatsAppInboxPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [isNote, setIsNote] = useState(false);
+  const [isInbound, setIsInbound] = useState(false);
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [newContactName, setNewContactName] = useState("");
@@ -192,7 +195,7 @@ export default function WhatsAppInboxPage() {
     sendMessageMutation.mutate({
       conversationId: selectedConversationId,
       content: messageInput.trim(),
-      direction: "out",
+      direction: isInbound ? "in" : "out",
       isNote,
     });
   };
@@ -493,9 +496,33 @@ export default function WhatsAppInboxPage() {
               <div className="border-t p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Button
+                    variant={isInbound ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setIsInbound(!isInbound);
+                      if (!isInbound) setIsNote(false);
+                    }}
+                    data-testid="button-toggle-inbound"
+                  >
+                    {isInbound ? (
+                      <>
+                        <ArrowDownLeft className="mr-2 h-4 w-4" />
+                        Log Inbound
+                      </>
+                    ) : (
+                      <>
+                        <ArrowUpRight className="mr-2 h-4 w-4" />
+                        Outbound
+                      </>
+                    )}
+                  </Button>
+                  <Button
                     variant={isNote ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setIsNote(!isNote)}
+                    onClick={() => {
+                      setIsNote(!isNote);
+                      if (!isNote) setIsInbound(false);
+                    }}
                     data-testid="button-toggle-note"
                   >
                     <StickyNote className="mr-2 h-4 w-4" />

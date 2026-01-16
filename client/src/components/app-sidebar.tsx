@@ -98,7 +98,7 @@ export function AppSidebar() {
             <Briefcase className="h-5 w-5" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-sidebar-foreground">MarketPro CRM</span>
+            <span className="text-sm font-semibold text-sidebar-foreground">DGmarket CRM</span>
             <span className="text-xs text-sidebar-foreground/60">Digital Marketing</span>
           </div>
         </div>
@@ -112,10 +112,10 @@ export function AppSidebar() {
               <SidebarMenu>
                 {filteredMain.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
+                    <SidebarMenuButton asChild isActive={location === item.url} className="py-2 hover:bg-sidebar-accent/50 transition-colors">
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
                         <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <span className="font-medium">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -132,10 +132,10 @@ export function AppSidebar() {
               <SidebarMenu>
                 {filteredSales.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
+                    <SidebarMenuButton asChild isActive={location === item.url} className="py-2 hover:bg-sidebar-accent/50 transition-colors">
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
                         <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <span className="font-medium">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -152,10 +152,10 @@ export function AppSidebar() {
               <SidebarMenu>
                 {filteredBilling.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
+                    <SidebarMenuButton asChild isActive={location === item.url} className="py-2 hover:bg-sidebar-accent/50 transition-colors">
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
                         <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <span className="font-medium">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -172,10 +172,10 @@ export function AppSidebar() {
               <SidebarMenu>
                 {filteredAdmin.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.url}>
+                    <SidebarMenuButton asChild isActive={location === item.url} className="py-2 hover:bg-sidebar-accent/50 transition-colors">
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
                         <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <span className="font-medium">{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
