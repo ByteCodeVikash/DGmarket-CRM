@@ -1,15 +1,19 @@
 import {
   users, leads, leadNotes, followUps, clients, services, clientServices, packages,
   tasks, quotations, invoices, payments, campaigns, activityLogs, notifications,
+  automationRules, callLogs, checklists, checklistItems, distributionSettings,
   type User, type InsertUser, type Lead, type InsertLead, type LeadNote, type InsertLeadNote,
   type FollowUp, type InsertFollowUp, type Client, type InsertClient, type Service, type InsertService,
   type ClientService, type InsertClientService, type Package, type InsertPackage,
   type Task, type InsertTask, type Quotation, type InsertQuotation,
   type Invoice, type InsertInvoice, type Payment, type InsertPayment, type Campaign, type InsertCampaign,
-  type Notification, type InsertNotification
+  type Notification, type InsertNotification, type ActivityLog, type InsertActivityLog,
+  type AutomationRule, type InsertAutomationRule, type CallLog, type InsertCallLog,
+  type Checklist, type InsertChecklist, type ChecklistItem, type InsertChecklistItem,
+  type DistributionSettings
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, like, sql } from "drizzle-orm";
+import { eq, desc, and, like, sql, asc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -105,6 +109,47 @@ export interface IStorage {
   getNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationRead(id: string): Promise<void>;
+
+  // Activity Logs
+  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  getActivityLogs(limit?: number): Promise<ActivityLog[]>;
+
+  // Automation Rules
+  getAutomationRule(id: string): Promise<AutomationRule | undefined>;
+  createAutomationRule(rule: InsertAutomationRule): Promise<AutomationRule>;
+  updateAutomationRule(id: string, rule: Partial<InsertAutomationRule>): Promise<AutomationRule | undefined>;
+  deleteAutomationRule(id: string): Promise<void>;
+  getAllAutomationRules(): Promise<AutomationRule[]>;
+  getActiveAutomationRules(): Promise<AutomationRule[]>;
+
+  // Call Logs
+  getCallLog(id: string): Promise<CallLog | undefined>;
+  createCallLog(log: InsertCallLog): Promise<CallLog>;
+  updateCallLog(id: string, log: Partial<InsertCallLog>): Promise<CallLog | undefined>;
+  deleteCallLog(id: string): Promise<void>;
+  getCallLogsByLead(leadId: string): Promise<CallLog[]>;
+  getCallLogsByClient(clientId: string): Promise<CallLog[]>;
+  getAllCallLogs(): Promise<CallLog[]>;
+
+  // Checklists
+  getChecklist(id: string): Promise<Checklist | undefined>;
+  createChecklist(checklist: InsertChecklist): Promise<Checklist>;
+  deleteChecklist(id: string): Promise<void>;
+  getChecklistsByClient(clientId: string): Promise<Checklist[]>;
+
+  // Checklist Items
+  getChecklistItems(checklistId: string): Promise<ChecklistItem[]>;
+  createChecklistItem(item: InsertChecklistItem): Promise<ChecklistItem>;
+  updateChecklistItem(id: string, item: Partial<InsertChecklistItem>): Promise<ChecklistItem | undefined>;
+  deleteChecklistItem(id: string): Promise<void>;
+
+  // Distribution Settings
+  getDistributionSettings(): Promise<DistributionSettings | undefined>;
+  updateDistributionSettings(settings: Partial<DistributionSettings>): Promise<DistributionSettings>;
+  getNextAssignee(): Promise<User | undefined>;
+
+  // Lead scoring helper
+  findDuplicateLeads(mobile: string, email?: string): Promise<Lead[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -460,6 +505,167 @@ export class DatabaseStorage implements IStorage {
 
   async markNotificationRead(id: string): Promise<void> {
     await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id));
+  }
+
+  // Activity Logs
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const [created] = await db.insert(activityLogs).values(log).returning();
+    return created;
+  }
+
+  async getActivityLogs(limit: number = 100): Promise<ActivityLog[]> {
+    return db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt)).limit(limit);
+  }
+
+  // Automation Rules
+  async getAutomationRule(id: string): Promise<AutomationRule | undefined> {
+    const [rule] = await db.select().from(automationRules).where(eq(automationRules.id, id));
+    return rule || undefined;
+  }
+
+  async createAutomationRule(rule: InsertAutomationRule): Promise<AutomationRule> {
+    const [created] = await db.insert(automationRules).values(rule).returning();
+    return created;
+  }
+
+  async updateAutomationRule(id: string, updates: Partial<InsertAutomationRule>): Promise<AutomationRule | undefined> {
+    const [updated] = await db.update(automationRules).set(updates).where(eq(automationRules.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteAutomationRule(id: string): Promise<void> {
+    await db.delete(automationRules).where(eq(automationRules.id, id));
+  }
+
+  async getAllAutomationRules(): Promise<AutomationRule[]> {
+    return db.select().from(automationRules).orderBy(desc(automationRules.createdAt));
+  }
+
+  async getActiveAutomationRules(): Promise<AutomationRule[]> {
+    return db.select().from(automationRules).where(eq(automationRules.isActive, true)).orderBy(desc(automationRules.createdAt));
+  }
+
+  // Call Logs
+  async getCallLog(id: string): Promise<CallLog | undefined> {
+    const [log] = await db.select().from(callLogs).where(eq(callLogs.id, id));
+    return log || undefined;
+  }
+
+  async createCallLog(log: InsertCallLog): Promise<CallLog> {
+    const [created] = await db.insert(callLogs).values(log).returning();
+    return created;
+  }
+
+  async updateCallLog(id: string, updates: Partial<InsertCallLog>): Promise<CallLog | undefined> {
+    const [updated] = await db.update(callLogs).set(updates).where(eq(callLogs.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteCallLog(id: string): Promise<void> {
+    await db.delete(callLogs).where(eq(callLogs.id, id));
+  }
+
+  async getCallLogsByLead(leadId: string): Promise<CallLog[]> {
+    return db.select().from(callLogs).where(eq(callLogs.leadId, leadId)).orderBy(desc(callLogs.calledAt));
+  }
+
+  async getCallLogsByClient(clientId: string): Promise<CallLog[]> {
+    return db.select().from(callLogs).where(eq(callLogs.clientId, clientId)).orderBy(desc(callLogs.calledAt));
+  }
+
+  async getAllCallLogs(): Promise<CallLog[]> {
+    return db.select().from(callLogs).orderBy(desc(callLogs.calledAt));
+  }
+
+  // Checklists
+  async getChecklist(id: string): Promise<Checklist | undefined> {
+    const [checklist] = await db.select().from(checklists).where(eq(checklists.id, id));
+    return checklist || undefined;
+  }
+
+  async createChecklist(checklist: InsertChecklist): Promise<Checklist> {
+    const [created] = await db.insert(checklists).values(checklist).returning();
+    return created;
+  }
+
+  async deleteChecklist(id: string): Promise<void> {
+    await db.delete(checklists).where(eq(checklists.id, id));
+  }
+
+  async getChecklistsByClient(clientId: string): Promise<Checklist[]> {
+    return db.select().from(checklists).where(eq(checklists.clientId, clientId)).orderBy(desc(checklists.createdAt));
+  }
+
+  // Checklist Items
+  async getChecklistItems(checklistId: string): Promise<ChecklistItem[]> {
+    return db.select().from(checklistItems).where(eq(checklistItems.checklistId, checklistId)).orderBy(asc(checklistItems.sortOrder));
+  }
+
+  async createChecklistItem(item: InsertChecklistItem): Promise<ChecklistItem> {
+    const [created] = await db.insert(checklistItems).values(item).returning();
+    return created;
+  }
+
+  async updateChecklistItem(id: string, updates: Partial<InsertChecklistItem>): Promise<ChecklistItem | undefined> {
+    const [updated] = await db.update(checklistItems).set(updates).where(eq(checklistItems.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteChecklistItem(id: string): Promise<void> {
+    await db.delete(checklistItems).where(eq(checklistItems.id, id));
+  }
+
+  // Distribution Settings
+  async getDistributionSettings(): Promise<DistributionSettings | undefined> {
+    const [settings] = await db.select().from(distributionSettings).limit(1);
+    return settings || undefined;
+  }
+
+  async updateDistributionSettings(settings: Partial<DistributionSettings>): Promise<DistributionSettings> {
+    const existing = await this.getDistributionSettings();
+    if (existing) {
+      const [updated] = await db.update(distributionSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(distributionSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(distributionSettings)
+        .values({ isEnabled: false, method: 'round_robin', ...settings })
+        .returning();
+      return created;
+    }
+  }
+
+  async getNextAssignee(): Promise<User | undefined> {
+    const settings = await this.getDistributionSettings();
+    if (!settings || !settings.isEnabled) return undefined;
+
+    const activeUsers = await db.select().from(users)
+      .where(and(eq(users.isActive, true), eq(users.role, 'sales')))
+      .orderBy(asc(users.createdAt));
+
+    if (activeUsers.length === 0) return undefined;
+
+    if (settings.method === 'round_robin') {
+      const lastIndex = settings.lastAssignedUserId 
+        ? activeUsers.findIndex(u => u.id === settings.lastAssignedUserId)
+        : -1;
+      const nextIndex = (lastIndex + 1) % activeUsers.length;
+      return activeUsers[nextIndex];
+    }
+
+    return activeUsers[0];
+  }
+
+  // Duplicate Lead Detection
+  async findDuplicateLeads(mobile: string, email?: string): Promise<Lead[]> {
+    const allLeads = await db.select().from(leads);
+    return allLeads.filter(lead => {
+      if (lead.mobile === mobile) return true;
+      if (email && lead.email === email) return true;
+      return false;
+    });
   }
 }
 

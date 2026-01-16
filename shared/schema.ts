@@ -27,6 +27,9 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Lead score enum
+export const leadScores = ["hot", "warm", "cold"] as const;
+
 // Leads table
 export const leads = pgTable("leads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -40,6 +43,17 @@ export const leads = pgTable("leads", {
   notes: text("notes"),
   ownerId: varchar("owner_id").references(() => users.id),
   campaignId: varchar("campaign_id").references(() => campaigns.id),
+  // AI Lead Scoring
+  score: text("score").default("warm"), // hot, warm, cold
+  scoreReason: text("score_reason"),
+  // UTM Tracking
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmContent: text("utm_content"),
+  utmTerm: text("utm_term"),
+  // Distribution tracking
+  distributedAt: timestamp("distributed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -220,6 +234,64 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Automation Rules for follow-ups
+export const automationRules = pgTable("automation_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  trigger: text("trigger").notNull(), // new_lead, status_change, no_activity
+  triggerValue: text("trigger_value"), // status value for status_change, days for no_activity
+  action: text("action").notNull(), // create_followup, send_notification, change_status
+  actionValue: text("action_value"), // days offset for followup, status for change_status
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Call Logs
+export const callLogs = pgTable("call_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  leadId: varchar("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  callType: text("call_type").notNull().default("outgoing"), // incoming, outgoing, missed
+  duration: integer("duration"), // in seconds
+  outcome: text("outcome"), // answered, no_answer, busy, voicemail
+  notes: text("notes"),
+  recordingUrl: text("recording_url"),
+  calledAt: timestamp("called_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Marketing Checklists
+export const checklists = pgTable("checklists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const checklistItems = pgTable("checklist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  checklistId: varchar("checklist_id").notNull().references(() => checklists.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id").references(() => users.id),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Lead Distribution Settings
+export const distributionSettings = pgTable("distribution_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  isEnabled: boolean("is_enabled").notNull().default(false),
+  method: text("method").notNull().default("round_robin"), // round_robin, load_based
+  lastAssignedUserId: varchar("last_assigned_user_id").references(() => users.id),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   leads: many(leads),
@@ -259,6 +331,11 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true,
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, createdAt: true });
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true, createdAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertAutomationRuleSchema = createInsertSchema(automationRules).omit({ id: true, createdAt: true });
+export const insertCallLogSchema = createInsertSchema(callLogs).omit({ id: true, createdAt: true });
+export const insertChecklistSchema = createInsertSchema(checklists).omit({ id: true, createdAt: true });
+export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true, createdAt: true });
+export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -290,3 +367,13 @@ export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type AutomationRule = typeof automationRules.$inferSelect;
+export type InsertAutomationRule = z.infer<typeof insertAutomationRuleSchema>;
+export type CallLog = typeof callLogs.$inferSelect;
+export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
+export type Checklist = typeof checklists.$inferSelect;
+export type InsertChecklist = z.infer<typeof insertChecklistSchema>;
+export type ChecklistItem = typeof checklistItems.$inferSelect;
+export type InsertChecklistItem = z.infer<typeof insertChecklistItemSchema>;
+export type DistributionSettings = typeof distributionSettings.$inferSelect;
