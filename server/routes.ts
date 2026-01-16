@@ -2156,6 +2156,200 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ==========================================
+  // WHATSAPP INBOX (CRM Simulator)
+  // ==========================================
+
+  // Get all conversations
+  app.get("/api/whatsapp/conversations", requireAuth, async (req, res) => {
+    try {
+      const conversations = await storage.getAllWhatsappConversations();
+      // Enrich with lead/client/user info
+      const allLeads = await storage.getAllLeads();
+      const allClients = await storage.getAllClients();
+      const allUsers = await storage.getAllUsers();
+      
+      const enriched = conversations.map(conv => ({
+        ...conv,
+        lead: conv.leadId ? allLeads.find(l => l.id === conv.leadId) : null,
+        client: conv.clientId ? allClients.find(c => c.id === conv.clientId) : null,
+        assignedUser: conv.assignedUserId ? allUsers.find(u => u.id === conv.assignedUserId) : null,
+      }));
+      res.json(enriched);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single conversation with messages
+  app.get("/api/whatsapp/conversations/:id", requireAuth, async (req, res) => {
+    try {
+      const conversation = await storage.getWhatsappConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      const messages = await storage.getWhatsappMessagesByConversation(req.params.id);
+      const allUsers = await storage.getAllUsers();
+      
+      // Enrich messages with sender info
+      const enrichedMessages = messages.map(msg => ({
+        ...msg,
+        sentByUser: msg.sentByUserId ? allUsers.find(u => u.id === msg.sentByUserId) : null,
+      }));
+      
+      res.json({ conversation, messages: enrichedMessages });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create new conversation (or get existing by phone)
+  app.post("/api/whatsapp/conversations", requireAuth, async (req, res) => {
+    try {
+      const { phone, leadId, clientId, contactName } = req.body;
+      if (!phone) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+      
+      // Check if conversation already exists
+      let conversation = await storage.getWhatsappConversationByPhone(phone);
+      if (conversation) {
+        return res.json(conversation);
+      }
+      
+      // Auto-detect lead/client by phone if not provided
+      let detectedLeadId = leadId;
+      let detectedClientId = clientId;
+      let detectedContactName = contactName;
+      
+      if (!detectedLeadId && !detectedClientId) {
+        const allLeads = await storage.getAllLeads();
+        const allClients = await storage.getAllClients();
+        
+        const matchingLead = allLeads.find(l => l.mobile === phone);
+        const matchingClient = allClients.find(c => c.phone === phone);
+        
+        if (matchingLead) {
+          detectedLeadId = matchingLead.id;
+          detectedContactName = detectedContactName || matchingLead.name;
+        }
+        if (matchingClient) {
+          detectedClientId = matchingClient.id;
+          detectedContactName = detectedContactName || matchingClient.contactName;
+        }
+      }
+      
+      conversation = await storage.createWhatsappConversation({
+        phone,
+        leadId: detectedLeadId,
+        clientId: detectedClientId,
+        contactName: detectedContactName || phone,
+        tag: 'warm',
+      });
+      res.status(201).json(conversation);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update conversation (tag, assignment, archive)
+  app.patch("/api/whatsapp/conversations/:id", requireAuth, async (req, res) => {
+    try {
+      const { tag, assignedUserId, isArchived, unreadCount } = req.body;
+      const updated = await storage.updateWhatsappConversation(req.params.id, {
+        tag, assignedUserId, isArchived, unreadCount
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete conversation
+  app.delete("/api/whatsapp/conversations/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteWhatsappConversation(req.params.id);
+      res.json({ message: "Conversation deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Add message to conversation (manual logging)
+  app.post("/api/whatsapp/messages", requireAuth, async (req, res) => {
+    try {
+      const { conversationId, direction, content, isNote } = req.body;
+      if (!conversationId || !content) {
+        return res.status(400).json({ message: "conversationId and content are required" });
+      }
+      
+      const user = req.user as any;
+      const message = await storage.createWhatsappMessage({
+        conversationId,
+        direction: direction || 'out',
+        content,
+        status: 'sent',
+        isNote: isNote || false,
+        sentByUserId: user.id,
+        sentAt: new Date(),
+      });
+      res.status(201).json(message);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Mark conversation as read
+  app.post("/api/whatsapp/conversations/:id/read", requireAuth, async (req, res) => {
+    try {
+      await storage.updateWhatsappConversation(req.params.id, { unreadCount: 0 });
+      res.json({ message: "Marked as read" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Quick Reply Templates
+  app.get("/api/whatsapp/templates", requireAuth, async (req, res) => {
+    try {
+      const templates = await storage.getAllQuickReplyTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/whatsapp/templates", requireAuth, async (req, res) => {
+    try {
+      const { name, content, category } = req.body;
+      if (!name || !content) {
+        return res.status(400).json({ message: "name and content are required" });
+      }
+      const user = req.user as any;
+      const template = await storage.createQuickReplyTemplate({
+        name,
+        content,
+        category: category || 'general',
+        userId: user.id,
+      });
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/whatsapp/templates/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteQuickReplyTemplate(req.params.id);
+      res.json({ message: "Template deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
   // ACTIVITY LOGS (Audit Trail)
   // ==========================================
   
