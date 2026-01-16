@@ -2,6 +2,7 @@ import {
   users, leads, leadNotes, followUps, clients, services, clientServices, packages,
   tasks, quotations, invoices, payments, campaigns, activityLogs, notifications,
   automationRules, automationRunLogs, callLogs, checklists, checklistItems, distributionSettings,
+  whatsappConversations, whatsappMessages, quickReplyTemplates,
   type User, type InsertUser, type Lead, type InsertLead, type LeadNote, type InsertLeadNote,
   type FollowUp, type InsertFollowUp, type Client, type InsertClient, type Service, type InsertService,
   type ClientService, type InsertClientService, type Package, type InsertPackage,
@@ -11,7 +12,10 @@ import {
   type AutomationRule, type InsertAutomationRule, type AutomationRunLog, type InsertAutomationRunLog,
   type CallLog, type InsertCallLog,
   type Checklist, type InsertChecklist, type ChecklistItem, type InsertChecklistItem,
-  type DistributionSettings
+  type DistributionSettings,
+  type WhatsappConversation, type InsertWhatsappConversation,
+  type WhatsappMessage, type InsertWhatsappMessage,
+  type QuickReplyTemplate, type InsertQuickReplyTemplate
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, like, sql, asc } from "drizzle-orm";
@@ -157,6 +161,27 @@ export interface IStorage {
 
   // Lead scoring helper
   findDuplicateLeads(mobile: string, email?: string): Promise<Lead[]>;
+
+  // WhatsApp Conversations
+  getWhatsappConversation(id: string): Promise<WhatsappConversation | undefined>;
+  getWhatsappConversationByPhone(phone: string): Promise<WhatsappConversation | undefined>;
+  createWhatsappConversation(conversation: InsertWhatsappConversation): Promise<WhatsappConversation>;
+  updateWhatsappConversation(id: string, conversation: Partial<InsertWhatsappConversation>): Promise<WhatsappConversation | undefined>;
+  deleteWhatsappConversation(id: string): Promise<void>;
+  getAllWhatsappConversations(): Promise<WhatsappConversation[]>;
+
+  // WhatsApp Messages
+  getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined>;
+  getWhatsappMessagesByConversation(conversationId: string): Promise<WhatsappMessage[]>;
+  createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage>;
+  deleteWhatsappMessage(id: string): Promise<void>;
+
+  // Quick Reply Templates
+  getQuickReplyTemplate(id: string): Promise<QuickReplyTemplate | undefined>;
+  createQuickReplyTemplate(template: InsertQuickReplyTemplate): Promise<QuickReplyTemplate>;
+  updateQuickReplyTemplate(id: string, template: Partial<InsertQuickReplyTemplate>): Promise<QuickReplyTemplate | undefined>;
+  deleteQuickReplyTemplate(id: string): Promise<void>;
+  getAllQuickReplyTemplates(): Promise<QuickReplyTemplate[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -694,6 +719,97 @@ export class DatabaseStorage implements IStorage {
       if (email && lead.email === email) return true;
       return false;
     });
+  }
+
+  // WhatsApp Conversations
+  async getWhatsappConversation(id: string): Promise<WhatsappConversation | undefined> {
+    const [conversation] = await db.select().from(whatsappConversations).where(eq(whatsappConversations.id, id));
+    return conversation || undefined;
+  }
+
+  async getWhatsappConversationByPhone(phone: string): Promise<WhatsappConversation | undefined> {
+    const [conversation] = await db.select().from(whatsappConversations).where(eq(whatsappConversations.phone, phone));
+    return conversation || undefined;
+  }
+
+  async createWhatsappConversation(conversation: InsertWhatsappConversation): Promise<WhatsappConversation> {
+    const [created] = await db.insert(whatsappConversations).values(conversation).returning();
+    return created;
+  }
+
+  async updateWhatsappConversation(id: string, conversation: Partial<InsertWhatsappConversation>): Promise<WhatsappConversation | undefined> {
+    const [updated] = await db.update(whatsappConversations)
+      .set({ ...conversation, updatedAt: new Date() })
+      .where(eq(whatsappConversations.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteWhatsappConversation(id: string): Promise<void> {
+    await db.delete(whatsappConversations).where(eq(whatsappConversations.id, id));
+  }
+
+  async getAllWhatsappConversations(): Promise<WhatsappConversation[]> {
+    return db.select().from(whatsappConversations).orderBy(desc(whatsappConversations.lastMessageAt));
+  }
+
+  // WhatsApp Messages
+  async getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined> {
+    const [message] = await db.select().from(whatsappMessages).where(eq(whatsappMessages.id, id));
+    return message || undefined;
+  }
+
+  async getWhatsappMessagesByConversation(conversationId: string): Promise<WhatsappMessage[]> {
+    return db.select().from(whatsappMessages)
+      .where(eq(whatsappMessages.conversationId, conversationId))
+      .orderBy(asc(whatsappMessages.sentAt));
+  }
+
+  async createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage> {
+    const [created] = await db.insert(whatsappMessages).values(message).returning();
+    // Update conversation's last message info
+    await db.update(whatsappConversations)
+      .set({
+        lastMessageAt: new Date(),
+        lastMessagePreview: message.content.substring(0, 100),
+        updatedAt: new Date(),
+        unreadCount: message.direction === 'in' 
+          ? sql`${whatsappConversations.unreadCount} + 1`
+          : whatsappConversations.unreadCount
+      })
+      .where(eq(whatsappConversations.id, message.conversationId));
+    return created;
+  }
+
+  async deleteWhatsappMessage(id: string): Promise<void> {
+    await db.delete(whatsappMessages).where(eq(whatsappMessages.id, id));
+  }
+
+  // Quick Reply Templates
+  async getQuickReplyTemplate(id: string): Promise<QuickReplyTemplate | undefined> {
+    const [template] = await db.select().from(quickReplyTemplates).where(eq(quickReplyTemplates.id, id));
+    return template || undefined;
+  }
+
+  async createQuickReplyTemplate(template: InsertQuickReplyTemplate): Promise<QuickReplyTemplate> {
+    const [created] = await db.insert(quickReplyTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateQuickReplyTemplate(id: string, template: Partial<InsertQuickReplyTemplate>): Promise<QuickReplyTemplate | undefined> {
+    const [updated] = await db.update(quickReplyTemplates)
+      .set(template)
+      .where(eq(quickReplyTemplates.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteQuickReplyTemplate(id: string): Promise<void> {
+    await db.delete(quickReplyTemplates).where(eq(quickReplyTemplates.id, id));
+  }
+
+  async getAllQuickReplyTemplates(): Promise<QuickReplyTemplate[]> {
+    return db.select().from(quickReplyTemplates).orderBy(desc(quickReplyTemplates.createdAt));
   }
 }
 
