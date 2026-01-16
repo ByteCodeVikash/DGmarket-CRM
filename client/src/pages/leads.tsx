@@ -17,6 +17,11 @@ import {
   User,
   Loader2,
   UserCheck,
+  Upload,
+  Download,
+  FileText,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -65,9 +70,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Lead, User as UserType, leadSources, leadStatuses } from "@shared/schema";
+
+interface ImportResult {
+  success: { row: number; lead: Lead }[];
+  failed: { row: number; data: any; error: string }[];
+  total: number;
+}
 
 const leadFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -97,6 +110,9 @@ export default function LeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -219,6 +235,110 @@ export default function LeadsPage() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const importMutation = useMutation({
+    mutationFn: async (csvData: any[]) => {
+      const response = await apiRequest("POST", "/api/leads/import", { csvData });
+      return response.json() as Promise<ImportResult>;
+    },
+    onSuccess: (result) => {
+      setImportResult(result);
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      if (result.failed.length === 0) {
+        toast({ title: "Import successful", description: `${result.success.length} leads imported.` });
+      } else {
+        toast({ 
+          title: "Import completed with errors", 
+          description: `${result.success.length} imported, ${result.failed.length} failed.`,
+          variant: result.success.length > 0 ? "default" : "destructive"
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const parseCSV = (text: string): any[] => {
+    const lines = text.split("\n").filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/"/g, ""));
+    const data: any[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      
+      for (const char of lines[i]) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          values.push(current.trim().replace(/^"|"$/g, ""));
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim().replace(/^"|"$/g, ""));
+      
+      const row: any = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || "";
+      });
+      data.push(row);
+    }
+    
+    return data;
+  };
+
+  const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const csvData = parseCSV(text);
+      if (csvData.length === 0) {
+        toast({ title: "Invalid CSV", description: "The file is empty or has no data rows.", variant: "destructive" });
+        return;
+      }
+      importMutation.mutate(csvData);
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
+      if (sourceFilter && sourceFilter !== "all") params.append("source", sourceFilter);
+      if (searchQuery) params.append("search", searchQuery);
+      
+      const response = await fetch(`/api/leads/export?${params.toString()}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Export failed");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leads_export_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast({ title: "Export successful", description: "Leads exported to CSV." });
+    } catch (error: any) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleSubmit = (data: LeadFormData) => {
     if (editingLead) {
@@ -365,19 +485,133 @@ export default function LeadsPage() {
         title="Leads"
         description="Manage and track your sales leads"
         actions={
-          <Dialog open={isFormOpen} onOpenChange={(open) => {
-            if (!open) {
-              setIsCreateOpen(false);
-              setEditingLead(null);
-              form.reset();
-            }
-          }}>
-            <DialogTrigger asChild>
-              <Button onClick={() => setIsCreateOpen(true)} data-testid="button-add-lead">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Lead
-              </Button>
-            </DialogTrigger>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={isExporting}
+              data-testid="button-export-leads"
+            >
+              {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Export
+            </Button>
+            <Dialog open={isImportOpen} onOpenChange={(open) => {
+              setIsImportOpen(open);
+              if (!open) setImportResult(null);
+            }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" data-testid="button-import-leads">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Import Leads from CSV</DialogTitle>
+                  <DialogDescription>
+                    Upload a CSV file with columns: name, mobile, email, city, source, status, notes
+                  </DialogDescription>
+                </DialogHeader>
+                
+                {!importResult ? (
+                  <div className="space-y-4">
+                    <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Upload a CSV file with lead data. Required columns: name, mobile
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleImportFile}
+                        className="hidden"
+                        id="csv-upload"
+                        data-testid="input-csv-file"
+                      />
+                      <label htmlFor="csv-upload">
+                        <Button asChild disabled={importMutation.isPending}>
+                          <span>
+                            {importMutation.isPending ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="mr-2 h-4 w-4" />
+                                Choose CSV File
+                              </>
+                            )}
+                          </span>
+                        </Button>
+                      </label>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p><strong>Example CSV format:</strong></p>
+                      <code className="block bg-muted p-2 rounded text-xs">
+                        name,mobile,email,city,source,status<br/>
+                        John Doe,9876543210,john@example.com,Mumbai,facebook,new
+                      </code>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        <span className="font-medium">{importResult.success.length} imported</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-5 w-5 text-red-500" />
+                        <span className="font-medium">{importResult.failed.length} failed</span>
+                      </div>
+                    </div>
+                    
+                    {importResult.success.length > 0 && (
+                      <Progress value={(importResult.success.length / importResult.total) * 100} className="h-2" />
+                    )}
+                    
+                    {importResult.failed.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium mb-2">Failed Rows:</p>
+                        <ScrollArea className="h-[200px] border rounded-md p-2">
+                          {importResult.failed.map((item, i) => (
+                            <div key={i} className="text-xs p-2 border-b last:border-0">
+                              <span className="font-medium">Row {item.row}:</span> {item.error}
+                              <div className="text-muted-foreground mt-1">
+                                Data: {JSON.stringify(item.data)}
+                              </div>
+                            </div>
+                          ))}
+                        </ScrollArea>
+                      </div>
+                    )}
+                    
+                    <DialogFooter>
+                      <Button onClick={() => {
+                        setImportResult(null);
+                        setIsImportOpen(false);
+                      }}>
+                        Done
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+            <Dialog open={isFormOpen} onOpenChange={(open) => {
+              if (!open) {
+                setIsCreateOpen(false);
+                setEditingLead(null);
+                form.reset();
+              }
+            }}>
+              <DialogTrigger asChild>
+                <Button onClick={() => setIsCreateOpen(true)} data-testid="button-add-lead">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Lead
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>{editingLead ? "Edit Lead" : "Add New Lead"}</DialogTitle>
@@ -548,6 +782,7 @@ export default function LeadsPage() {
               </Form>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

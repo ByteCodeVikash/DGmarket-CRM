@@ -265,6 +265,60 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Export leads to CSV (must be before :id route)
+  app.get("/api/leads/export", requireAuth, async (req, res) => {
+    try {
+      let leads = await storage.getAllLeads();
+      
+      // Apply filters
+      const { status, source, search } = req.query;
+      
+      if (status && status !== "all") {
+        leads = leads.filter(l => l.status === status);
+      }
+      
+      if (source && source !== "all") {
+        leads = leads.filter(l => l.source === source);
+      }
+      
+      if (search && typeof search === "string") {
+        const query = search.toLowerCase();
+        leads = leads.filter(l => 
+          l.name.toLowerCase().includes(query) ||
+          l.email?.toLowerCase().includes(query) ||
+          l.mobile.includes(query) ||
+          l.city?.toLowerCase().includes(query)
+        );
+      }
+      
+      // Generate CSV content
+      const headers = ["Name", "Email", "Mobile", "City", "Source", "Status", "Notes", "Created At"];
+      const csvRows = [headers.join(",")];
+      
+      for (const lead of leads) {
+        const row = [
+          `"${(lead.name || "").replace(/"/g, '""')}"`,
+          `"${(lead.email || "").replace(/"/g, '""')}"`,
+          `"${(lead.mobile || "").replace(/"/g, '""')}"`,
+          `"${(lead.city || "").replace(/"/g, '""')}"`,
+          `"${(lead.source || "").replace(/"/g, '""')}"`,
+          `"${(lead.status || "").replace(/"/g, '""')}"`,
+          `"${(lead.notes || "").replace(/"/g, '""')}"`,
+          `"${lead.createdAt ? new Date(lead.createdAt).toISOString() : ""}"`,
+        ];
+        csvRows.push(row.join(","));
+      }
+      
+      const csvContent = csvRows.join("\n");
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="leads_export_${Date.now()}.csv"`);
+      res.send(csvContent);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/leads/:id", requireAuth, async (req, res) => {
     try {
       const lead = await storage.getLead(req.params.id);
@@ -321,6 +375,78 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       await storage.deleteLead(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Bulk Import leads via CSV
+  app.post("/api/leads/import", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as User;
+      const { csvData } = req.body;
+      
+      if (!csvData || !Array.isArray(csvData)) {
+        return res.status(400).json({ message: "Invalid CSV data" });
+      }
+      
+      const results = {
+        success: [] as any[],
+        failed: [] as { row: number; data: any; error: string }[],
+        total: csvData.length,
+      };
+      
+      const validSources = ["facebook", "instagram", "google", "website", "referral"];
+      const validStatuses = ["new", "interested", "follow_up", "converted", "not_interested"];
+      
+      for (let i = 0; i < csvData.length; i++) {
+        const row = csvData[i];
+        const rowNum = i + 1;
+        
+        // Validate required fields
+        if (!row.name || typeof row.name !== "string" || row.name.trim().length < 2) {
+          results.failed.push({ row: rowNum, data: row, error: "Name is required (min 2 characters)" });
+          continue;
+        }
+        
+        if (!row.mobile || typeof row.mobile !== "string" || row.mobile.trim().length < 10) {
+          results.failed.push({ row: rowNum, data: row, error: "Mobile is required (min 10 digits)" });
+          continue;
+        }
+        
+        // Validate optional fields
+        const source = row.source && validSources.includes(row.source.toLowerCase()) 
+          ? row.source.toLowerCase() 
+          : "website";
+        const status = row.status && validStatuses.includes(row.status.toLowerCase()) 
+          ? row.status.toLowerCase() 
+          : "new";
+        
+        // Check for duplicates
+        const existingLead = await storage.findLeadByMobileOrEmail(row.mobile.trim(), row.email?.trim());
+        if (existingLead) {
+          results.failed.push({ row: rowNum, data: row, error: "Duplicate lead (mobile or email already exists)" });
+          continue;
+        }
+        
+        try {
+          const lead = await storage.createLead({
+            name: row.name.trim(),
+            email: row.email?.trim() || null,
+            mobile: row.mobile.trim(),
+            city: row.city?.trim() || null,
+            source,
+            status,
+            notes: row.notes?.trim() || null,
+            ownerId: user.id,
+          });
+          results.success.push({ row: rowNum, lead });
+        } catch (err: any) {
+          results.failed.push({ row: rowNum, data: row, error: err.message });
+        }
+      }
+      
+      res.json(results);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
