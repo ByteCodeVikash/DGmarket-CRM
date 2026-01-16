@@ -168,6 +168,10 @@ export default function SettingsPage() {
               <Zap className="mr-2 h-4 w-4" />
               Advanced
             </TabsTrigger>
+            <TabsTrigger value="automations" data-testid="tab-automations">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Automations
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile">
@@ -392,6 +396,10 @@ export default function SettingsPage() {
           <TabsContent value="advanced">
             <AdvancedSettings />
           </TabsContent>
+
+          <TabsContent value="automations">
+            <AutomationsSettings />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
@@ -543,6 +551,251 @@ function AdvancedSettings() {
           ) : (
             <p className="text-sm text-muted-foreground text-center py-4">
               No activity logs yet. Actions will be recorded as users interact with the system.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AutomationsSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showNewRuleForm, setShowNewRuleForm] = useState(false);
+  const [newRule, setNewRule] = useState({
+    name: "",
+    trigger: "new_lead",
+    triggerValue: "5",
+    action: "send_whatsapp",
+    actionValue: "",
+  });
+
+  const { data: automationRules } = useQuery<any[]>({
+    queryKey: ["/api/automation-rules"],
+  });
+
+  const { data: runLogs } = useQuery<any[]>({
+    queryKey: ["/api/automation-run-logs"],
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", "/api/automation-rules", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/automation-rules"] });
+      toast({ title: "Automation rule created" });
+      setShowNewRuleForm(false);
+      setNewRule({ name: "", trigger: "new_lead", triggerValue: "5", action: "send_whatsapp", actionValue: "" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleRuleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/automation-rules/${id}`, { isActive });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/automation-rules"] });
+      toast({ title: "Rule updated" });
+    },
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/automation-rules/${id}`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/automation-rules"] });
+      toast({ title: "Rule deleted" });
+    },
+  });
+
+  const getTriggerLabel = (trigger: string, value: string) => {
+    switch (trigger) {
+      case "new_lead": return `Lead created (after ${value || 5} minutes)`;
+      case "no_activity": return `No activity (after ${value || 1} day${value !== "1" ? "s" : ""})`;
+      case "status_change": return `Status changed to ${value || "proposal"}`;
+      default: return trigger;
+    }
+  };
+
+  const getActionLabel = (action: string, value: string) => {
+    switch (action) {
+      case "send_whatsapp": return "Send WhatsApp template";
+      case "create_notification": return "Create reminder notification";
+      case "create_followup": return `Create follow-up task (in ${value || 2} days)`;
+      default: return action;
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Automation Rules
+            </CardTitle>
+            <CardDescription>
+              Set up automatic follow-ups and notifications based on lead activity
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={() => setShowNewRuleForm(!showNewRuleForm)}
+            data-testid="button-add-automation"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Rule
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {showNewRuleForm && (
+            <Card className="bg-muted/50">
+              <CardContent className="pt-4 space-y-4">
+                <Input
+                  placeholder="Rule name"
+                  value={newRule.name}
+                  onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+                  data-testid="input-rule-name"
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Trigger</label>
+                    <select
+                      className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                      value={newRule.trigger}
+                      onChange={(e) => setNewRule({ ...newRule, trigger: e.target.value })}
+                      data-testid="select-trigger"
+                    >
+                      <option value="new_lead">Lead Created</option>
+                      <option value="no_activity">No Activity</option>
+                      <option value="status_change">Status Change</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Trigger Value</label>
+                    <Input
+                      placeholder={newRule.trigger === "status_change" ? "proposal" : "5"}
+                      value={newRule.triggerValue}
+                      onChange={(e) => setNewRule({ ...newRule, triggerValue: e.target.value })}
+                      data-testid="input-trigger-value"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Action</label>
+                    <select
+                      className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                      value={newRule.action}
+                      onChange={(e) => setNewRule({ ...newRule, action: e.target.value })}
+                      data-testid="select-action"
+                    >
+                      <option value="send_whatsapp">Send WhatsApp Template</option>
+                      <option value="create_notification">Create Reminder</option>
+                      <option value="create_followup">Create Follow-up Task</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Action Value</label>
+                    <Input
+                      placeholder={newRule.action === "create_followup" ? "Days offset (e.g. 2)" : "Optional"}
+                      value={newRule.actionValue}
+                      onChange={(e) => setNewRule({ ...newRule, actionValue: e.target.value })}
+                      data-testid="input-action-value"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createRuleMutation.mutate(newRule)}
+                    disabled={!newRule.name || createRuleMutation.isPending}
+                    data-testid="button-save-rule"
+                  >
+                    {createRuleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save Rule
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowNewRuleForm(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {automationRules && automationRules.length > 0 ? (
+            <div className="space-y-3">
+              {automationRules.map((rule: any) => (
+                <div key={rule.id} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`automation-rule-${rule.id}`}>
+                  <div className="flex-1">
+                    <p className="font-medium">{rule.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      When: {getTriggerLabel(rule.trigger, rule.triggerValue)} → Then: {getActionLabel(rule.action, rule.actionValue)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={rule.isActive}
+                      onCheckedChange={(checked) => toggleRuleMutation.mutate({ id: rule.id, isActive: checked })}
+                      data-testid={`switch-rule-${rule.id}`}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteRuleMutation.mutate(rule.id)}
+                      data-testid={`button-delete-rule-${rule.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No automation rules yet. Create rules to automate your follow-up workflow.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Automation Run Logs
+          </CardTitle>
+          <CardDescription>
+            Recent automation executions and their results
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {runLogs && runLogs.length > 0 ? (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {runLogs.slice(0, 20).map((log: any) => (
+                <div key={log.id} className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50" data-testid={`run-log-${log.id}`}>
+                  <div className={`w-2 h-2 mt-2 rounded-full ${log.actionResult === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{log.actionType}</p>
+                    <p className="text-xs text-muted-foreground">{log.details || "No details"}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(log.triggeredAt).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No automation logs yet. Logs will appear when rules are triggered.
             </p>
           )}
         </CardContent>

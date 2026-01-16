@@ -1993,6 +1993,25 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ==========================================
+  // AUTOMATION RUN LOGS
+  // ==========================================
+
+  app.get("/api/automation-run-logs", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const { ruleId } = req.query;
+      let logs;
+      if (ruleId) {
+        logs = await storage.getAutomationRunLogsByRule(ruleId as string);
+      } else {
+        logs = await storage.getAllAutomationRunLogs();
+      }
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
   // CALL LOGS
   // ==========================================
   
