@@ -29,6 +29,7 @@ export const users = pgTable("users", {
 
 // Lead score enum
 export const leadScores = ["hot", "warm", "cold"] as const;
+export const interestLevels = ["low", "medium", "high"] as const;
 
 // Leads table
 export const leads = pgTable("leads", {
@@ -43,9 +44,13 @@ export const leads = pgTable("leads", {
   notes: text("notes"),
   ownerId: varchar("owner_id").references(() => users.id),
   campaignId: varchar("campaign_id").references(() => campaigns.id),
-  // AI Lead Scoring
-  score: text("score").default("warm"), // hot, warm, cold
+  // AI Lead Scoring - Enhanced
+  score: text("score").default("warm"), // hot, warm, cold (temperature)
+  leadScore: integer("lead_score").default(50), // Numeric score 0-100
   scoreReason: text("score_reason"),
+  interestLevel: text("interest_level").default("medium"), // low, medium, high
+  budget: decimal("budget", { precision: 12, scale: 2 }), // Optional budget field
+  lastActivityAt: timestamp("last_activity_at"), // Last interaction timestamp
   // UTM Tracking
   utmSource: text("utm_source"),
   utmMedium: text("utm_medium"),

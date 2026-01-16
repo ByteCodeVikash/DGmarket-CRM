@@ -91,6 +91,8 @@ const leadFormSchema = z.object({
   status: z.string(),
   notes: z.string().optional(),
   ownerId: z.string().optional(),
+  interestLevel: z.string().optional(),
+  budget: z.string().optional(),
 });
 
 type LeadFormData = z.infer<typeof leadFormSchema>;
@@ -116,6 +118,7 @@ export default function LeadsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [temperatureFilter, setTemperatureFilter] = useState<string>("all");
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -133,6 +136,7 @@ export default function LeadsPage() {
     if (searchQuery) params.append("search", searchQuery);
     if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
     if (sourceFilter && sourceFilter !== "all") params.append("source", sourceFilter);
+    if (temperatureFilter && temperatureFilter !== "all") params.append("score", temperatureFilter);
     params.append("sortBy", sortBy);
     params.append("sortOrder", sortOrder);
     params.append("page", currentPage.toString());
@@ -151,7 +155,7 @@ export default function LeadsPage() {
   }
 
   const { data: leadsResponse, isLoading } = useQuery<LeadsResponse>({
-    queryKey: ["/api/leads", searchQuery, statusFilter, sourceFilter, sortBy, sortOrder, currentPage],
+    queryKey: ["/api/leads", searchQuery, statusFilter, sourceFilter, temperatureFilter, sortBy, sortOrder, currentPage],
     queryFn: async () => {
       const res = await fetch(buildLeadsUrl(), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch leads");
@@ -177,6 +181,8 @@ export default function LeadsPage() {
       status: "new",
       notes: "",
       ownerId: "",
+      interestLevel: "medium",
+      budget: "",
     },
   });
 
@@ -413,11 +419,20 @@ export default function LeadsPage() {
     {
       key: "score",
       header: "Score",
-      cell: (lead: Lead) => (
-        <Badge className={scoreColors[(lead as any).score] || scoreColors.warm}>
-          {((lead as any).score || "warm").toUpperCase()}
-        </Badge>
-      ),
+      cell: (lead: Lead) => {
+        const temp = (lead as any).score || "warm";
+        const numScore = (lead as any).leadScore ?? 50;
+        return (
+          <div className="flex items-center gap-2">
+            <Badge className={scoreColors[temp] || scoreColors.warm} data-testid={`badge-score-${lead.id}`}>
+              {temp.toUpperCase()}
+            </Badge>
+            <span className="text-xs text-muted-foreground" data-testid={`text-leadscore-${lead.id}`}>
+              {numScore}
+            </span>
+          </div>
+        );
+      },
     },
     {
       key: "city",
@@ -759,6 +774,46 @@ export default function LeadsPage() {
                   />
                   <FormField
                     control={form.control}
+                    name="interestLevel"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Interest Level</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value || "medium"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-interest-level">
+                              <SelectValue placeholder="Select interest level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="budget"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Budget (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder="e.g., 50000"
+                            {...field}
+                            data-testid="input-lead-budget"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name="ownerId"
                     render={({ field }) => (
                       <FormItem>
@@ -841,6 +896,17 @@ export default function LeadsPage() {
                   {source}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={temperatureFilter} onValueChange={(val) => { setTemperatureFilter(val); setCurrentPage(1); }}>
+            <SelectTrigger className="w-[150px]" data-testid="filter-temperature">
+              <SelectValue placeholder="Temperature" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Temps</SelectItem>
+              <SelectItem value="hot">Hot</SelectItem>
+              <SelectItem value="warm">Warm</SelectItem>
+              <SelectItem value="cold">Cold</SelectItem>
             </SelectContent>
           </Select>
           <Select value={sortBy} onValueChange={(val) => { setSortBy(val); setCurrentPage(1); }}>

@@ -299,7 +299,7 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/leads", requireAuth, async (req, res) => {
     try {
       let leads = await storage.getAllLeads();
-      const { search, status, source, sortBy, sortOrder, page, limit } = req.query;
+      const { search, status, source, score, sortBy, sortOrder, page, limit } = req.query;
       
       if (search && typeof search === "string") {
         const searchLower = search.toLowerCase();
@@ -317,6 +317,11 @@ export async function registerRoutes(server: Server, app: Express) {
       
       if (source && typeof source === "string" && source !== "all") {
         leads = leads.filter(lead => lead.source === source);
+      }
+      
+      // Temperature (score) filter
+      if (score && typeof score === "string" && score !== "all") {
+        leads = leads.filter(lead => lead.score === score);
       }
       
       if (sortBy && typeof sortBy === "string") {
@@ -648,7 +653,11 @@ export async function registerRoutes(server: Server, app: Express) {
       let leadName = "a lead";
       if (req.body.leadId) {
         const lead = await storage.getLead(req.body.leadId);
-        if (lead) leadName = lead.name;
+        if (lead) {
+          leadName = lead.name;
+          // Update lastActivityAt and recalculate score
+          await storage.updateLead(lead.id, { lastActivityAt: new Date() });
+        }
       }
       
       await storage.createNotification({
@@ -1782,44 +1791,81 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
 
   // AI Lead Scoring - Calculate score based on engagement signals
-  function calculateLeadScore(lead: Lead, followUps: any[], notes: any[]): { score: string; reason: string } {
+  function calculateLeadScore(
+    lead: Lead, 
+    followUps: any[], 
+    notes: any[], 
+    callLogs: any[] = []
+  ): { score: string; leadScore: number; reason: string } {
     let points = 50; // Start at neutral
     const reasons: string[] = [];
 
-    // Engagement signals
-    if (lead.email) { points += 10; reasons.push("Has email"); }
-    if (lead.city) { points += 5; reasons.push("Location provided"); }
+    // 1. Call/WhatsApp interactions count
+    const callCount = callLogs.filter(c => c.leadId === lead.id).length;
+    const whatsappNotes = notes.filter(n => n.type === "whatsapp" || n.type === "call").length;
+    const totalInteractions = callCount + whatsappNotes;
     
-    // Source quality
-    if (lead.source === "referral") { points += 20; reasons.push("Referral lead"); }
-    else if (lead.source === "website") { points += 10; reasons.push("Website inquiry"); }
-    else if (lead.source === "google") { points += 15; reasons.push("Google search"); }
+    if (totalInteractions >= 5) { points += 20; reasons.push(`${totalInteractions} interactions`); }
+    else if (totalInteractions >= 2) { points += 10; reasons.push(`${totalInteractions} interactions`); }
+    else if (totalInteractions > 0) { points += 5; reasons.push("Has interaction"); }
+
+    // 2. Budget match (if budget exists)
+    if (lead.budget) {
+      const budgetVal = parseFloat(lead.budget.toString());
+      if (budgetVal >= 50000) { points += 25; reasons.push("High budget"); }
+      else if (budgetVal >= 20000) { points += 15; reasons.push("Good budget"); }
+      else if (budgetVal >= 5000) { points += 10; reasons.push("Has budget"); }
+    }
+
+    // 3. Interest level
+    if (lead.interestLevel === "high") { points += 20; reasons.push("High interest"); }
+    else if (lead.interestLevel === "medium") { points += 10; reasons.push("Medium interest"); }
+    else if (lead.interestLevel === "low") { points -= 10; reasons.push("Low interest"); }
+
+    // 4. Last activity time (recent activity increases score)
+    const lastActivity = lead.lastActivityAt ? new Date(lead.lastActivityAt) : new Date(lead.createdAt);
+    const daysSinceActivity = Math.floor((Date.now() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
     
-    // Pipeline progress
-    if (lead.pipelineStage === "qualified") { points += 20; reasons.push("Qualified"); }
-    else if (lead.pipelineStage === "proposal_sent") { points += 30; reasons.push("Proposal sent"); }
-    else if (lead.pipelineStage === "negotiation") { points += 35; reasons.push("In negotiation"); }
+    if (daysSinceActivity <= 1) { points += 20; reasons.push("Active today"); }
+    else if (daysSinceActivity <= 3) { points += 15; reasons.push("Active recently"); }
+    else if (daysSinceActivity <= 7) { points += 10; reasons.push("Active this week"); }
+    else if (daysSinceActivity > 30) { points -= 15; reasons.push("Inactive >30d"); }
+
+    // 5. Engagement signals
+    if (lead.email) { points += 5; reasons.push("Has email"); }
+    if (lead.city) { points += 3; reasons.push("Location provided"); }
     
-    // Status signals
+    // 6. Source quality
+    if (lead.source === "referral") { points += 15; reasons.push("Referral"); }
+    else if (lead.source === "google") { points += 10; reasons.push("Google"); }
+    else if (lead.source === "website") { points += 8; reasons.push("Website"); }
+    
+    // 7. Pipeline progress
+    if (lead.pipelineStage === "negotiation") { points += 25; reasons.push("Negotiation"); }
+    else if (lead.pipelineStage === "proposal_sent") { points += 20; reasons.push("Proposal sent"); }
+    else if (lead.pipelineStage === "qualified") { points += 15; reasons.push("Qualified"); }
+    else if (lead.pipelineStage === "contacted") { points += 5; reasons.push("Contacted"); }
+    
+    // 8. Status signals
     if (lead.status === "interested") { points += 15; reasons.push("Interested"); }
+    else if (lead.status === "converted") { points += 30; reasons.push("Converted"); }
     else if (lead.status === "not_interested") { points -= 30; reasons.push("Not interested"); }
     
-    // Follow-up engagement
-    if (followUps.length > 0) { points += 10; reasons.push(`${followUps.length} follow-ups`); }
-    if (notes.length > 2) { points += 10; reasons.push("Active communication"); }
+    // 9. Follow-up engagement
+    const completedFollowUps = followUps.filter(f => f.isCompleted).length;
+    if (completedFollowUps >= 3) { points += 15; reasons.push(`${completedFollowUps} completed follow-ups`); }
+    else if (completedFollowUps > 0) { points += 8; reasons.push("Has follow-ups"); }
 
-    // Calculate recency (decay for old leads)
-    const daysSinceCreated = Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-    if (daysSinceCreated > 30) { points -= 15; reasons.push("Stale lead"); }
-    else if (daysSinceCreated < 7) { points += 10; reasons.push("Recent lead"); }
+    // Clamp points to 0-100
+    const leadScore = Math.max(0, Math.min(100, points));
 
-    // Determine score tier
+    // Determine temperature tier
     let score: string;
-    if (points >= 70) score = "hot";
-    else if (points >= 40) score = "warm";
+    if (leadScore >= 70) score = "hot";
+    else if (leadScore >= 40) score = "warm";
     else score = "cold";
 
-    return { score, reason: reasons.slice(0, 3).join(", ") };
+    return { score, leadScore, reason: reasons.slice(0, 4).join(", ") };
   }
 
   // Recalculate lead score endpoint
@@ -1833,10 +1879,12 @@ export async function registerRoutes(server: Server, app: Express) {
       const followUps = await storage.getAllFollowUps();
       const leadFollowUps = followUps.filter(f => f.leadId === lead.id);
       const notes = await storage.getLeadNotes(lead.id);
+      const callLogs = await storage.getCallLogs();
+      const leadCallLogs = callLogs.filter(c => c.leadId === lead.id);
 
-      const { score, reason } = calculateLeadScore(lead, leadFollowUps, notes);
+      const { score, leadScore, reason } = calculateLeadScore(lead, leadFollowUps, notes, leadCallLogs);
       
-      const updated = await storage.updateLead(lead.id, { score, scoreReason: reason });
+      const updated = await storage.updateLead(lead.id, { score, leadScore, scoreReason: reason });
       
       // Log activity
       await storage.createActivityLog({
@@ -1858,13 +1906,15 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const leads = await storage.getAllLeads();
       const followUps = await storage.getAllFollowUps();
+      const callLogs = await storage.getCallLogs();
       let updated = 0;
 
       for (const lead of leads) {
         const leadFollowUps = followUps.filter(f => f.leadId === lead.id);
         const notes = await storage.getLeadNotes(lead.id);
-        const { score, reason } = calculateLeadScore(lead, leadFollowUps, notes);
-        await storage.updateLead(lead.id, { score, scoreReason: reason });
+        const leadCallLogs = callLogs.filter(c => c.leadId === lead.id);
+        const { score, leadScore, reason } = calculateLeadScore(lead, leadFollowUps, notes, leadCallLogs);
+        await storage.updateLead(lead.id, { score, leadScore, scoreReason: reason });
         updated++;
       }
 

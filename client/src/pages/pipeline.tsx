@@ -297,6 +297,18 @@ export default function PipelinePage() {
                                     <Badge variant="secondary" className="text-xs capitalize" data-testid={`lead-source-${lead.id}`}>
                                       {lead.source}
                                     </Badge>
+                                    <Badge 
+                                      className={`text-xs ${
+                                        (lead as any).score === "hot" 
+                                          ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" 
+                                          : (lead as any).score === "cold" 
+                                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                          : "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                                      }`}
+                                      data-testid={`lead-temp-${lead.id}`}
+                                    >
+                                      {((lead as any).score || "warm").toUpperCase()}
+                                    </Badge>
                                     {owner && (
                                       <Badge variant="outline" className="text-xs" data-testid={`lead-owner-${lead.id}`}>
                                         <User className="h-2.5 w-2.5 mr-1" />
