@@ -16,6 +16,7 @@ import {
   Loader2,
   Settings,
   X,
+  Wand2,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -59,6 +60,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Client, Service, ClientService } from "@shared/schema";
+import { AIMessageGenerator } from "@/components/ai-message-generator";
 import {
   Select,
   SelectContent,
@@ -88,6 +90,7 @@ export default function ClientsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [managingServicesClient, setManagingServicesClient] = useState<Client | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string>("");
+  const [messageGeneratorClient, setMessageGeneratorClient] = useState<Client | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -324,6 +327,13 @@ export default function ClientsPage() {
             <DropdownMenuItem onClick={() => handleEdit(client)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => setMessageGeneratorClient(client)}
+              data-testid={`button-ai-message-${client.id}`}
+            >
+              <Wand2 className="mr-2 h-4 w-4" />
+              Generate AI Message
             </DropdownMenuItem>
             <DropdownMenuItem 
               onClick={() => setManagingServicesClient(client)}
@@ -640,6 +650,26 @@ export default function ClientsPage() {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={messageGeneratorClient !== null} onOpenChange={(open) => !open && setMessageGeneratorClient(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5" />
+              AI Message Generator
+            </DialogTitle>
+            <DialogDescription>
+              Generate personalized messages for {messageGeneratorClient?.contactName}
+            </DialogDescription>
+          </DialogHeader>
+          {messageGeneratorClient && (
+            <AIMessageGenerator
+              clientId={messageGeneratorClient.id}
+              clientName={messageGeneratorClient.contactName}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -22,6 +22,7 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  Wand2,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -75,6 +76,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Lead, User as UserType, leadSources, leadStatuses } from "@shared/schema";
+import { AIMessageGenerator } from "@/components/ai-message-generator";
 
 interface ImportResult {
   success: { row: number; lead: Lead }[];
@@ -129,6 +131,7 @@ export default function LeadsPage() {
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
+  const [messageGeneratorLead, setMessageGeneratorLead] = useState<Lead | null>(null);
   const pageSize = 20;
 
   const buildLeadsUrl = () => {
@@ -481,6 +484,13 @@ export default function LeadsPage() {
               <DropdownMenuItem onClick={() => handleEdit(lead)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => setMessageGeneratorLead(lead)}
+                data-testid={`button-ai-message-${lead.id}`}
+              >
+                <Wand2 className="mr-2 h-4 w-4" />
+                Generate AI Message
               </DropdownMenuItem>
               {lead.status !== "converted" && (
                 <DropdownMenuItem 
@@ -1021,6 +1031,26 @@ export default function LeadsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={messageGeneratorLead !== null} onOpenChange={(open) => !open && setMessageGeneratorLead(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5" />
+              AI Message Generator
+            </DialogTitle>
+            <DialogDescription>
+              Generate personalized messages for {messageGeneratorLead?.name}
+            </DialogDescription>
+          </DialogHeader>
+          {messageGeneratorLead && (
+            <AIMessageGenerator
+              leadId={messageGeneratorLead.id}
+              leadName={messageGeneratorLead.name}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

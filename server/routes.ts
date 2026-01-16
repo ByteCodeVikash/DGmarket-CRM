@@ -2012,6 +2012,65 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // ==========================================
+  // AI MESSAGE GENERATOR
+  // ==========================================
+
+  app.post("/api/generate-message", requireAuth, async (req, res) => {
+    try {
+      const { type, leadId, clientId, languageStyle } = req.body;
+      const { generateMessage, generateWhatsAppLink } = await import("./messageGenerator");
+      
+      let context: any = { name: 'there' };
+      let phone = '';
+      
+      if (leadId) {
+        const lead = await storage.getLead(leadId);
+        if (lead) {
+          context.name = lead.name;
+          context.serviceInterest = lead.source || 'our services';
+          phone = lead.mobile;
+          
+          const allFollowUps = await storage.getAllFollowUps();
+          const leadFollowUps = allFollowUps.filter(f => f.leadId === leadId);
+          if (leadFollowUps.length > 0) {
+            context.lastFollowUp = leadFollowUps[0].scheduledAt;
+          }
+          
+          const allQuotations = await storage.getAllQuotations();
+          const leadQuotations = allQuotations.filter(q => q.leadId === leadId);
+          if (leadQuotations.length > 0) {
+            context.quotationAmount = leadQuotations[0].totalAmount;
+          }
+        }
+      }
+      
+      if (clientId) {
+        const client = await storage.getClient(clientId);
+        if (client) {
+          context.name = client.contactName;
+          context.serviceInterest = client.companyName || 'our services';
+          phone = client.phone;
+          
+          const allInvoices = await storage.getAllInvoices();
+          const clientInvoices = allInvoices.filter(i => i.clientId === clientId);
+          const pendingInvoice = clientInvoices.find((inv: any) => inv.status !== 'paid');
+          if (pendingInvoice) {
+            context.invoiceAmount = pendingInvoice.totalAmount;
+            context.invoiceDue = pendingInvoice.dueDate;
+          }
+        }
+      }
+      
+      const message = generateMessage(type, context, languageStyle || 'english');
+      const whatsappLink = phone ? generateWhatsAppLink(phone, message) : '';
+      
+      res.json({ message, whatsappLink, phone });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
   // CALL LOGS
   // ==========================================
   
