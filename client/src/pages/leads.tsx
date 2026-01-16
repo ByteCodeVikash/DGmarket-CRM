@@ -1,0 +1,562 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
+import {
+  Plus,
+  Search,
+  Filter,
+  MoreHorizontal,
+  Phone,
+  MessageCircle,
+  Mail,
+  Trash2,
+  Edit,
+  User,
+  Loader2,
+} from "lucide-react";
+import { PageHeader } from "@/components/page-header";
+import { DataTable } from "@/components/data-table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Lead, User as UserType, leadSources, leadStatuses } from "@shared/schema";
+
+const leadFormSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email().optional().or(z.literal("")),
+  mobile: z.string().min(10, "Mobile number must be at least 10 digits"),
+  city: z.string().optional(),
+  source: z.string(),
+  status: z.string(),
+  ownerId: z.string().optional(),
+});
+
+type LeadFormData = z.infer<typeof leadFormSchema>;
+
+const statusColors: Record<string, string> = {
+  new: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  interested: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  follow_up: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+  converted: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  not_interested: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
+};
+
+export default function LeadsPage() {
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const buildLeadsUrl = () => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.append("search", searchQuery);
+    if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
+    if (sourceFilter && sourceFilter !== "all") params.append("source", sourceFilter);
+    const queryString = params.toString();
+    return queryString ? `/api/leads?${queryString}` : "/api/leads";
+  };
+
+  const { data: leads = [], isLoading } = useQuery<Lead[]>({
+    queryKey: ["/api/leads", searchQuery, statusFilter, sourceFilter],
+    queryFn: async () => {
+      const res = await fetch(buildLeadsUrl(), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch leads");
+      return res.json();
+    },
+  });
+
+  const { data: users = [] } = useQuery<UserType[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const form = useForm<LeadFormData>({
+    resolver: zodResolver(leadFormSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      mobile: "",
+      city: "",
+      source: "website",
+      status: "new",
+      ownerId: "",
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: LeadFormData) => {
+      const response = await apiRequest("POST", "/api/leads", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      setIsCreateOpen(false);
+      form.reset();
+      toast({ title: "Lead created", description: "New lead has been added successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: LeadFormData }) => {
+      const response = await apiRequest("PATCH", `/api/leads/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      setEditingLead(null);
+      form.reset();
+      toast({ title: "Lead updated", description: "Lead has been updated successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/leads/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      setDeleteId(null);
+      toast({ title: "Lead deleted", description: "Lead has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = (data: LeadFormData) => {
+    if (editingLead) {
+      updateMutation.mutate({ id: editingLead.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (lead: Lead) => {
+    setEditingLead(lead);
+    form.reset({
+      name: lead.name,
+      email: lead.email || "",
+      mobile: lead.mobile,
+      city: lead.city || "",
+      source: lead.source,
+      status: lead.status,
+      ownerId: lead.ownerId || "",
+    });
+  };
+
+  const handleWhatsApp = (mobile: string) => {
+    window.open(`https://wa.me/${mobile.replace(/\D/g, "")}`, "_blank");
+  };
+
+  const handleCall = (mobile: string) => {
+    window.open(`tel:${mobile}`, "_self");
+  };
+
+  const columns = [
+    {
+      key: "name",
+      header: "Lead",
+      cell: (lead: Lead) => (
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+            <User className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="font-medium">{lead.name}</p>
+            <p className="text-xs text-muted-foreground">{lead.mobile}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "source",
+      header: "Source",
+      cell: (lead: Lead) => (
+        <Badge variant="secondary" className="capitalize">
+          {lead.source}
+        </Badge>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (lead: Lead) => (
+        <Badge className={statusColors[lead.status] || ""}>
+          {lead.status.replace("_", " ")}
+        </Badge>
+      ),
+    },
+    {
+      key: "city",
+      header: "City",
+      cell: (lead: Lead) => (
+        <span className="text-muted-foreground">{lead.city || "-"}</span>
+      ),
+    },
+    {
+      key: "createdAt",
+      header: "Created",
+      cell: (lead: Lead) => (
+        <span className="text-sm text-muted-foreground">
+          {format(new Date(lead.createdAt), "MMM d, yyyy")}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      cell: (lead: Lead) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleWhatsApp(lead.mobile)}
+            data-testid={`button-whatsapp-${lead.id}`}
+          >
+            <MessageCircle className="h-4 w-4 text-green-600" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => handleCall(lead.mobile)}
+            data-testid={`button-call-${lead.id}`}
+          >
+            <Phone className="h-4 w-4 text-blue-600" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" data-testid={`button-actions-${lead.id}`}>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleEdit(lead)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => setDeleteId(lead.id)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+      className: "w-[120px]",
+    },
+  ];
+
+  const isFormOpen = isCreateOpen || editingLead !== null;
+
+  return (
+    <div className="flex flex-col">
+      <PageHeader
+        title="Leads"
+        description="Manage and track your sales leads"
+        actions={
+          <Dialog open={isFormOpen} onOpenChange={(open) => {
+            if (!open) {
+              setIsCreateOpen(false);
+              setEditingLead(null);
+              form.reset();
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button onClick={() => setIsCreateOpen(true)} data-testid="button-add-lead">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Lead
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingLead ? "Edit Lead" : "Add New Lead"}</DialogTitle>
+                <DialogDescription>
+                  {editingLead ? "Update the lead information below." : "Enter the lead details below."}
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="John Doe" {...field} data-testid="input-lead-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="mobile"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Mobile</FormLabel>
+                          <FormControl>
+                            <Input placeholder="+91 9876543210" {...field} data-testid="input-lead-mobile" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input placeholder="john@example.com" {...field} data-testid="input-lead-email" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Mumbai" {...field} data-testid="input-lead-city" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="source"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Source</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-lead-source">
+                                <SelectValue placeholder="Select source" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {leadSources.map((source) => (
+                                <SelectItem key={source} value={source} className="capitalize">
+                                  {source}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-lead-status">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {leadStatuses.map((status) => (
+                                <SelectItem key={status} value={status} className="capitalize">
+                                  {status.replace("_", " ")}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="ownerId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned To</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-lead-owner">
+                              <SelectValue placeholder="Select team member" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {users.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button
+                      type="submit"
+                      disabled={createMutation.isPending || updateMutation.isPending}
+                      data-testid="button-submit-lead"
+                    >
+                      {(createMutation.isPending || updateMutation.isPending) && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      {editingLead ? "Update Lead" : "Create Lead"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <div className="flex-1 space-y-4 p-6">
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search leads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-leads"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px]" data-testid="filter-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              {leadStatuses.map((status) => (
+                <SelectItem key={status} value={status} className="capitalize">
+                  {status.replace("_", " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-[150px]" data-testid="filter-source">
+              <SelectValue placeholder="Source" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              {leadSources.map((source) => (
+                <SelectItem key={source} value={source} className="capitalize">
+                  {source}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Data Table */}
+        <DataTable
+          columns={columns}
+          data={leads}
+          isLoading={isLoading}
+          emptyMessage="No leads found. Add your first lead to get started."
+        />
+      </div>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Lead</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this lead? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
