@@ -24,6 +24,7 @@ import CampaignsPage from "@/pages/campaigns";
 import ReportsPage from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
 import ClientPortalPage from "@/pages/client-portal";
+import WhatsAppInboxPage from "@/pages/whatsapp-inbox";
 import NotFound from "@/pages/not-found";
 import { hasPermission } from "@/lib/auth";
 
@@ -31,6 +32,7 @@ const routePermissions: Record<string, string> = {
   "/": "dashboard",
   "/leads": "leads",
   "/follow-ups": "follow_ups",
+  "/whatsapp-inbox": "leads",
   "/pipeline": "pipeline",
   "/clients": "clients",
   "/services": "services",
@@ -123,6 +125,7 @@ function Router() {
           <Route path="/" component={DashboardPage} />
           <Route path="/leads" component={LeadsPage} />
           <Route path="/follow-ups" component={FollowUpsPage} />
+          <Route path="/whatsapp-inbox" component={WhatsAppInboxPage} />
           <Route path="/pipeline" component={PipelinePage} />
           <Route path="/clients" component={ClientsPage} />
           <Route path="/services" component={ServicesPage} />

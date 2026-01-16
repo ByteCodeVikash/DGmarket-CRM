@@ -16,6 +16,7 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -45,6 +46,7 @@ const mainMenuItems = [
   { title: "Client Portal", url: "/portal", icon: Building2, permission: "portal" },
   { title: "Leads", url: "/leads", icon: Users, permission: "leads" },
   { title: "Follow-ups", url: "/follow-ups", icon: PhoneCall, permission: "follow_ups" },
+  { title: "WhatsApp Inbox", url: "/whatsapp-inbox", icon: MessageSquare, permission: "leads" },
   { title: "Pipeline", url: "/pipeline", icon: UserCheck, permission: "pipeline" },
 ];
 
