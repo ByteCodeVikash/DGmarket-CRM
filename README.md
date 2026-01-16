@@ -1,4 +1,4 @@
-# MarketPro CRM
+# DGmarket CRM
 
 A comprehensive Digital Marketing Customer Relationship Management web application featuring lead management, client tracking, sales pipeline visualization, invoicing, and team collaboration.
 
@@ -394,3 +394,4 @@ If your website is on a different domain than the CRM, you may need to configure
 - **Existing**: 2 features (Package Builder, RBAC)
 - **Partial**: 2 features (WhatsApp, PDF Reports)
 - **Not Implemented**: 8 features (require external integrations or complex infrastructure)
+# DGmarket-CRM
