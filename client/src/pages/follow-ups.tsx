@@ -14,6 +14,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -220,13 +221,24 @@ export default function FollowUpsPage() {
         title="Follow-ups"
         description="Manage your scheduled calls and meetings"
         actions={
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-followup">
-                <Plus className="mr-2 h-4 w-4" />
-                Schedule Follow-up
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => {
+                window.location.href = "/api/follow-ups/export/ics";
+              }}
+              data-testid="button-export-ics"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export to Calendar
+            </Button>
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-followup">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Schedule Follow-up
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Schedule Follow-up</DialogTitle>
@@ -302,6 +314,7 @@ export default function FollowUpsPage() {
               </Form>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
 

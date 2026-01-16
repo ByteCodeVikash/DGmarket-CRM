@@ -189,7 +189,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFollowUp(insertFollowUp: InsertFollowUp): Promise<FollowUp> {
-    const [followUp] = await db.insert(followUps).values(insertFollowUp).returning();
+    const data = {
+      ...insertFollowUp,
+      scheduledAt: new Date(insertFollowUp.scheduledAt),
+    };
+    const [followUp] = await db.insert(followUps).values(data).returning();
     return followUp;
   }
 
@@ -197,6 +201,9 @@ export class DatabaseStorage implements IStorage {
     const updateData: any = { ...updates };
     if (updates.isCompleted) {
       updateData.completedAt = new Date();
+    }
+    if (updates.scheduledAt) {
+      updateData.scheduledAt = new Date(updates.scheduledAt);
     }
     const [followUp] = await db.update(followUps).set(updateData).where(eq(followUps.id, id)).returning();
     return followUp || undefined;

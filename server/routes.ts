@@ -542,6 +542,92 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ICS Export for Google Calendar
+  app.get("/api/follow-ups/export/ics", requireAuth, async (req, res) => {
+    try {
+      const followUps = await storage.getAllFollowUps();
+      
+      // Filter to only upcoming/pending follow-ups
+      const pendingFollowUps = followUps.filter(f => !f.isCompleted);
+      
+      // Build ICS file content
+      const icsLines: string[] = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//MarketPro CRM//Follow-ups//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+      ];
+      
+      for (const followUp of pendingFollowUps) {
+        // Get lead/client info for event title
+        let contactName = "Contact";
+        let contactPhone = "";
+        
+        if (followUp.leadId) {
+          const lead = await storage.getLead(followUp.leadId);
+          if (lead) {
+            contactName = lead.name;
+            contactPhone = lead.mobile || "";
+          }
+        } else if (followUp.clientId) {
+          const client = await storage.getClient(followUp.clientId);
+          if (client) {
+            contactName = client.contactName;
+            contactPhone = client.phone || "";
+          }
+        }
+        
+        const scheduledDate = new Date(followUp.scheduledAt);
+        const endDate = new Date(scheduledDate.getTime() + 30 * 60 * 1000); // 30 min duration
+        
+        // Format dates for ICS (YYYYMMDDTHHMMSSZ)
+        const formatICSDate = (date: Date) => {
+          return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+        };
+        
+        // Escape special characters per RFC5545
+        const escapeICS = (text: string) => {
+          return text
+            .replace(/\\/g, "\\\\")
+            .replace(/;/g, "\\;")
+            .replace(/,/g, "\\,")
+            .replace(/\n/g, "\\n");
+        };
+        
+        const title = contactPhone 
+          ? `Follow-up: ${contactName} (${contactPhone})`
+          : `Follow-up: ${contactName}`;
+        
+        const description = followUp.notes 
+          ? escapeICS(followUp.notes)
+          : "";
+        
+        icsLines.push("BEGIN:VEVENT");
+        icsLines.push(`UID:${followUp.id}@marketpro-crm`);
+        icsLines.push(`DTSTAMP:${formatICSDate(new Date())}`);
+        icsLines.push(`DTSTART:${formatICSDate(scheduledDate)}`);
+        icsLines.push(`DTEND:${formatICSDate(endDate)}`);
+        icsLines.push(`SUMMARY:${escapeICS(title)}`);
+        if (description) {
+          icsLines.push(`DESCRIPTION:${description}`);
+        }
+        icsLines.push("STATUS:CONFIRMED");
+        icsLines.push("END:VEVENT");
+      }
+      
+      icsLines.push("END:VCALENDAR");
+      
+      const icsContent = icsLines.join("\r\n");
+      
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=follow-ups.ics");
+      res.send(icsContent);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/follow-ups", requireAuth, async (req, res) => {
     try {
       const user = req.user as User;
