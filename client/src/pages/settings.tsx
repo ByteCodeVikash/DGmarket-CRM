@@ -2,13 +2,19 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   User,
   Bell,
   Lock,
   Building2,
   Loader2,
+  Zap,
+  Users,
+  History,
+  RefreshCw,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -157,6 +163,10 @@ export default function SettingsPage() {
             <TabsTrigger value="company" data-testid="tab-company">
               <Building2 className="mr-2 h-4 w-4" />
               Company
+            </TabsTrigger>
+            <TabsTrigger value="advanced" data-testid="tab-advanced">
+              <Zap className="mr-2 h-4 w-4" />
+              Advanced
             </TabsTrigger>
           </TabsList>
 
@@ -378,8 +388,165 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="advanced">
+            <AdvancedSettings />
+          </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+function AdvancedSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: distributionSettings } = useQuery<any>({
+    queryKey: ["/api/distribution-settings"],
+  });
+
+  const { data: automationRules } = useQuery<any[]>({
+    queryKey: ["/api/automation-rules"],
+  });
+
+  const { data: activityLogs } = useQuery<any[]>({
+    queryKey: ["/api/activity-logs"],
+  });
+
+  const updateDistributionMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("PATCH", "/api/distribution-settings", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/distribution-settings"] });
+      toast({ title: "Settings updated" });
+    },
+  });
+
+  const distributeLeadsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/leads/distribute", {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Leads distributed", description: data.message });
+    },
+  });
+
+  const scoreAllLeadsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/leads/score-all", {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Leads scored", description: data.message });
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            AI Lead Scoring
+          </CardTitle>
+          <CardDescription>
+            Automatically score leads as Hot, Warm, or Cold based on engagement signals
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Lead scoring analyzes: Source quality, pipeline stage, engagement history, recency, and follow-up activity.
+          </p>
+          <Button 
+            onClick={() => scoreAllLeadsMutation.mutate()}
+            disabled={scoreAllLeadsMutation.isPending}
+            data-testid="button-score-leads"
+          >
+            {scoreAllLeadsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Score All Leads
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Lead Distribution (Round Robin)
+          </CardTitle>
+          <CardDescription>
+            Automatically distribute new leads among sales team members
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Enable Round Robin</p>
+              <p className="text-sm text-muted-foreground">
+                Automatically assign new leads to sales team members in rotation
+              </p>
+            </div>
+            <Switch
+              checked={distributionSettings?.isEnabled || false}
+              onCheckedChange={(checked) => updateDistributionMutation.mutate({ isEnabled: checked })}
+              data-testid="switch-distribution"
+            />
+          </div>
+          <Button 
+            onClick={() => distributeLeadsMutation.mutate()}
+            disabled={distributeLeadsMutation.isPending}
+            variant="outline"
+            data-testid="button-distribute-leads"
+          >
+            {distributeLeadsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Distribute Unassigned Leads Now
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Activity Log (Audit Trail)
+          </CardTitle>
+          <CardDescription>
+            Recent system activity and audit trail
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {activityLogs && activityLogs.length > 0 ? (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {activityLogs.slice(0, 20).map((log: any) => (
+                <div key={log.id} className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{log.action}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {log.entityType} - {log.details || "No details"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">{log.userName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(log.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No activity logs yet. Actions will be recorded as users interact with the system.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

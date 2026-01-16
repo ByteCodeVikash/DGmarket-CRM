@@ -41,6 +41,12 @@ export async function registerRoutes(server: Server, app: Express) {
     source: z.enum(leadSources).optional().default("website"),
     notes: z.string().optional(),
     campaignId: z.string().optional(),
+    // UTM tracking fields
+    utmSource: z.string().optional(),
+    utmMedium: z.string().optional(),
+    utmCampaign: z.string().optional(),
+    utmContent: z.string().optional(),
+    utmTerm: z.string().optional(),
   });
 
   app.post("/api/leads/capture", async (req, res) => {
@@ -75,7 +81,7 @@ export async function registerRoutes(server: Server, app: Express) {
         });
       }
       
-      // Create the lead with proper source
+      // Create the lead with proper source and UTM tracking
       const lead = await storage.createLead({
         name: data.name,
         mobile: data.mobile,
@@ -86,6 +92,12 @@ export async function registerRoutes(server: Server, app: Express) {
         notes: data.notes || null,
         campaignId: data.campaignId || null,
         ownerId: null, // Will be assigned later by CRM user
+        // UTM tracking fields
+        utmSource: data.utmSource || null,
+        utmMedium: data.utmMedium || null,
+        utmCampaign: data.utmCampaign || null,
+        utmContent: data.utmContent || null,
+        utmTerm: data.utmTerm || null,
       });
       
       res.status(201).json({
@@ -1760,6 +1772,587 @@ export async function registerRoutes(server: Server, app: Express) {
       } else {
         res.status(400).json({ message: "Invalid export type" });
       }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // ADVANCED FEATURES APIs
+  // ==========================================
+
+  // AI Lead Scoring - Calculate score based on engagement signals
+  function calculateLeadScore(lead: Lead, followUps: any[], notes: any[]): { score: string; reason: string } {
+    let points = 50; // Start at neutral
+    const reasons: string[] = [];
+
+    // Engagement signals
+    if (lead.email) { points += 10; reasons.push("Has email"); }
+    if (lead.city) { points += 5; reasons.push("Location provided"); }
+    
+    // Source quality
+    if (lead.source === "referral") { points += 20; reasons.push("Referral lead"); }
+    else if (lead.source === "website") { points += 10; reasons.push("Website inquiry"); }
+    else if (lead.source === "google") { points += 15; reasons.push("Google search"); }
+    
+    // Pipeline progress
+    if (lead.pipelineStage === "qualified") { points += 20; reasons.push("Qualified"); }
+    else if (lead.pipelineStage === "proposal_sent") { points += 30; reasons.push("Proposal sent"); }
+    else if (lead.pipelineStage === "negotiation") { points += 35; reasons.push("In negotiation"); }
+    
+    // Status signals
+    if (lead.status === "interested") { points += 15; reasons.push("Interested"); }
+    else if (lead.status === "not_interested") { points -= 30; reasons.push("Not interested"); }
+    
+    // Follow-up engagement
+    if (followUps.length > 0) { points += 10; reasons.push(`${followUps.length} follow-ups`); }
+    if (notes.length > 2) { points += 10; reasons.push("Active communication"); }
+
+    // Calculate recency (decay for old leads)
+    const daysSinceCreated = Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceCreated > 30) { points -= 15; reasons.push("Stale lead"); }
+    else if (daysSinceCreated < 7) { points += 10; reasons.push("Recent lead"); }
+
+    // Determine score tier
+    let score: string;
+    if (points >= 70) score = "hot";
+    else if (points >= 40) score = "warm";
+    else score = "cold";
+
+    return { score, reason: reasons.slice(0, 3).join(", ") };
+  }
+
+  // Recalculate lead score endpoint
+  app.post("/api/leads/:id/score", requireAuth, requireRole("admin", "manager", "sales"), async (req, res) => {
+    try {
+      const lead = await storage.getLead(req.params.id);
+      if (!lead) {
+        return res.status(404).json({ message: "Lead not found" });
+      }
+
+      const followUps = await storage.getAllFollowUps();
+      const leadFollowUps = followUps.filter(f => f.leadId === lead.id);
+      const notes = await storage.getLeadNotes(lead.id);
+
+      const { score, reason } = calculateLeadScore(lead, leadFollowUps, notes);
+      
+      const updated = await storage.updateLead(lead.id, { score, scoreReason: reason });
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: (req.user as User).id,
+        action: "score_updated",
+        entityType: "lead",
+        entityId: lead.id,
+        details: `Score changed to ${score}: ${reason}`,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Bulk score all leads
+  app.post("/api/leads/score-all", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const leads = await storage.getAllLeads();
+      const followUps = await storage.getAllFollowUps();
+      let updated = 0;
+
+      for (const lead of leads) {
+        const leadFollowUps = followUps.filter(f => f.leadId === lead.id);
+        const notes = await storage.getLeadNotes(lead.id);
+        const { score, reason } = calculateLeadScore(lead, leadFollowUps, notes);
+        await storage.updateLead(lead.id, { score, scoreReason: reason });
+        updated++;
+      }
+
+      res.json({ message: `Scored ${updated} leads`, count: updated });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // AUTOMATION RULES
+  // ==========================================
+  
+  app.get("/api/automation-rules", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const rules = await storage.getAllAutomationRules();
+      res.json(rules);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const automationRuleSchema = z.object({
+    name: z.string().min(1, "Name is required"),
+    trigger: z.string().min(1, "Trigger is required"),
+    triggerValue: z.string().optional(),
+    action: z.string().min(1, "Action is required"),
+    actionValue: z.string().optional(),
+    isActive: z.boolean().optional().default(true),
+  });
+
+  app.post("/api/automation-rules", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const parseResult = automationRuleSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parseResult.error.errors });
+      }
+      const rule = await storage.createAutomationRule({
+        ...parseResult.data,
+        createdById: (req.user as User).id,
+      });
+      
+      await storage.createActivityLog({
+        userId: (req.user as User).id,
+        action: "created",
+        entityType: "automation_rule",
+        entityId: rule.id,
+        details: `Created automation rule: ${rule.name}`,
+      });
+
+      res.status(201).json(rule);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/automation-rules/:id", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const rule = await storage.updateAutomationRule(req.params.id, req.body);
+      if (!rule) {
+        return res.status(404).json({ message: "Rule not found" });
+      }
+      res.json(rule);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/automation-rules/:id", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      await storage.deleteAutomationRule(req.params.id);
+      res.json({ message: "Rule deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // CALL LOGS
+  // ==========================================
+  
+  app.get("/api/call-logs", requireAuth, async (req, res) => {
+    try {
+      const { leadId, clientId } = req.query;
+      let logs;
+      if (leadId) {
+        logs = await storage.getCallLogsByLead(leadId as string);
+      } else if (clientId) {
+        logs = await storage.getCallLogsByClient(clientId as string);
+      } else {
+        logs = await storage.getAllCallLogs();
+      }
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const callLogSchema = z.object({
+    leadId: z.string().optional(),
+    clientId: z.string().optional(),
+    callType: z.enum(["incoming", "outgoing", "missed"]).default("outgoing"),
+    duration: z.number().optional(),
+    outcome: z.string().optional(),
+    notes: z.string().optional(),
+    recordingUrl: z.string().optional(),
+    calledAt: z.string().optional(),
+  });
+
+  app.post("/api/call-logs", requireAuth, async (req, res) => {
+    try {
+      const parseResult = callLogSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parseResult.error.errors });
+      }
+      const data = parseResult.data;
+      const log = await storage.createCallLog({
+        ...data,
+        calledAt: data.calledAt ? new Date(data.calledAt) : new Date(),
+        userId: (req.user as User).id,
+      });
+      
+      await storage.createActivityLog({
+        userId: (req.user as User).id,
+        action: "call_logged",
+        entityType: "call_log",
+        entityId: log.id,
+        details: `${log.callType} call - ${log.outcome || "completed"}`,
+      });
+
+      res.status(201).json(log);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/call-logs/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteCallLog(req.params.id);
+      res.json({ message: "Call log deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // ACTIVITY LOGS (Audit Trail)
+  // ==========================================
+  
+  app.get("/api/activity-logs", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getActivityLogs(limit);
+      
+      // Enrich with user names
+      const users = await storage.getAllUsers();
+      const enriched = logs.map(log => ({
+        ...log,
+        userName: users.find(u => u.id === log.userId)?.name || "Unknown",
+      }));
+      
+      res.json(enriched);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // DUPLICATE LEAD DETECTION
+  // ==========================================
+  
+  app.get("/api/leads/duplicates", requireAuth, requireRole("admin", "manager", "sales"), async (req, res) => {
+    try {
+      const leads = await storage.getAllLeads();
+      const duplicates: { lead: Lead; matches: Lead[] }[] = [];
+      const processed = new Set<string>();
+
+      for (const lead of leads) {
+        if (processed.has(lead.id)) continue;
+        
+        const matches = leads.filter(l => 
+          l.id !== lead.id && 
+          !processed.has(l.id) &&
+          (l.mobile === lead.mobile || (l.email && lead.email && l.email === lead.email))
+        );
+        
+        if (matches.length > 0) {
+          duplicates.push({ lead, matches });
+          processed.add(lead.id);
+          matches.forEach(m => processed.add(m.id));
+        }
+      }
+
+      res.json(duplicates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Merge duplicate leads
+  app.post("/api/leads/merge", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const { primaryId, duplicateIds } = req.body;
+      
+      if (!primaryId || !duplicateIds || !Array.isArray(duplicateIds)) {
+        return res.status(400).json({ message: "Primary ID and duplicate IDs required" });
+      }
+
+      const primary = await storage.getLead(primaryId);
+      if (!primary) {
+        return res.status(404).json({ message: "Primary lead not found" });
+      }
+
+      // Merge notes and follow-ups from duplicates to primary
+      for (const dupId of duplicateIds) {
+        const dupFollowUps = (await storage.getAllFollowUps()).filter(f => f.leadId === dupId);
+        for (const fu of dupFollowUps) {
+          await storage.createFollowUp({
+            ...fu,
+            leadId: primaryId,
+          });
+        }
+
+        const dupNotes = await storage.getLeadNotes(dupId);
+        for (const note of dupNotes) {
+          await storage.createLeadNote({
+            leadId: primaryId,
+            userId: note.userId,
+            content: `[Merged] ${note.content}`,
+            type: note.type,
+          });
+        }
+
+        // Delete the duplicate
+        await storage.deleteLead(dupId);
+      }
+
+      await storage.createActivityLog({
+        userId: (req.user as User).id,
+        action: "leads_merged",
+        entityType: "lead",
+        entityId: primaryId,
+        details: `Merged ${duplicateIds.length} duplicate leads`,
+      });
+
+      res.json({ message: `Merged ${duplicateIds.length} duplicates into primary lead` });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // LEAD DISTRIBUTION (Round Robin)
+  // ==========================================
+  
+  app.get("/api/distribution-settings", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      let settings = await storage.getDistributionSettings();
+      if (!settings) {
+        settings = await storage.updateDistributionSettings({ isEnabled: false, method: "round_robin" });
+      }
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/distribution-settings", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const settings = await storage.updateDistributionSettings(req.body);
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Distribute unassigned leads
+  app.post("/api/leads/distribute", requireAuth, requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const leads = await storage.getAllLeads();
+      const unassigned = leads.filter(l => !l.ownerId);
+      let distributed = 0;
+
+      for (const lead of unassigned) {
+        const assignee = await storage.getNextAssignee();
+        if (assignee) {
+          await storage.updateLead(lead.id, { 
+            ownerId: assignee.id,
+            distributedAt: new Date(),
+          });
+          await storage.updateDistributionSettings({ lastAssignedUserId: assignee.id });
+          distributed++;
+        }
+      }
+
+      await storage.createActivityLog({
+        userId: (req.user as User).id,
+        action: "leads_distributed",
+        entityType: "lead",
+        entityId: null,
+        details: `Distributed ${distributed} leads via round robin`,
+      });
+
+      res.json({ message: `Distributed ${distributed} leads`, count: distributed });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // MARKETING CHECKLISTS
+  // ==========================================
+  
+  app.get("/api/checklists", requireAuth, async (req, res) => {
+    try {
+      const { clientId } = req.query;
+      if (clientId) {
+        const checklists = await storage.getChecklistsByClient(clientId as string);
+        res.json(checklists);
+      } else {
+        // Get all clients' checklists
+        const clients = await storage.getAllClients();
+        const allChecklists = [];
+        for (const client of clients) {
+          const cls = await storage.getChecklistsByClient(client.id);
+          allChecklists.push(...cls.map(c => ({ ...c, clientName: client.companyName })));
+        }
+        res.json(allChecklists);
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const checklistSchema = z.object({
+    clientId: z.string().min(1, "Client ID is required"),
+    name: z.string().min(1, "Name is required"),
+  });
+
+  app.post("/api/checklists", requireAuth, async (req, res) => {
+    try {
+      const parseResult = checklistSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parseResult.error.errors });
+      }
+      const checklist = await storage.createChecklist({
+        ...parseResult.data,
+        createdById: (req.user as User).id,
+      });
+      res.status(201).json(checklist);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/checklists/:id/items", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getChecklistItems(req.params.id);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const checklistItemSchema = z.object({
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional(),
+    sortOrder: z.number().optional().default(0),
+  });
+
+  app.post("/api/checklists/:id/items", requireAuth, async (req, res) => {
+    try {
+      const parseResult = checklistItemSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parseResult.error.errors });
+      }
+      const item = await storage.createChecklistItem({
+        ...parseResult.data,
+        checklistId: req.params.id,
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/checklist-items/:id", requireAuth, async (req, res) => {
+    try {
+      const updates = { ...req.body };
+      if (req.body.isCompleted) {
+        updates.completedAt = new Date();
+        updates.completedById = (req.user as User).id;
+      }
+      const item = await storage.updateChecklistItem(req.params.id, updates);
+      res.json(item);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/checklist-items/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteChecklistItem(req.params.id);
+      res.json({ message: "Item deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/checklists/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteChecklist(req.params.id);
+      res.json({ message: "Checklist deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==========================================
+  // KPI DASHBOARD ADVANCED STATS
+  // ==========================================
+  
+  app.get("/api/dashboard/kpis", requireAuth, async (req, res) => {
+    try {
+      const leads = await storage.getAllLeads();
+      const clients = await storage.getAllClients();
+      const invoices = await storage.getAllInvoices();
+      const followUps = await storage.getAllFollowUps();
+      const tasks = await storage.getAllTasks();
+
+      const today = new Date();
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+
+      // This month metrics
+      const thisMonthLeads = leads.filter(l => new Date(l.createdAt) >= thisMonth);
+      const lastMonthLeads = leads.filter(l => new Date(l.createdAt) >= lastMonth && new Date(l.createdAt) <= lastMonthEnd);
+      
+      const thisMonthConversions = thisMonthLeads.filter(l => l.status === "converted").length;
+      const lastMonthConversions = lastMonthLeads.filter(l => l.status === "converted").length;
+
+      const thisMonthRevenue = invoices
+        .filter(i => new Date(i.createdAt) >= thisMonth)
+        .reduce((sum, i) => sum + Number(i.paidAmount), 0);
+      const lastMonthRevenue = invoices
+        .filter(i => new Date(i.createdAt) >= lastMonth && new Date(i.createdAt) <= lastMonthEnd)
+        .reduce((sum, i) => sum + Number(i.paidAmount), 0);
+
+      // Lead scores distribution
+      const hotLeads = leads.filter(l => l.score === "hot").length;
+      const warmLeads = leads.filter(l => l.score === "warm").length;
+      const coldLeads = leads.filter(l => l.score === "cold").length;
+
+      // Pending follow-ups
+      const pendingFollowUps = followUps.filter(f => !f.isCompleted).length;
+      const overdueFollowUps = followUps.filter(f => !f.isCompleted && new Date(f.scheduledAt) < today).length;
+
+      // Task completion rate
+      const completedTasks = tasks.filter(t => t.status === "done").length;
+      const taskCompletionRate = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
+      // Average deal size
+      const paidInvoices = invoices.filter(i => Number(i.paidAmount) > 0);
+      const avgDealSize = paidInvoices.length > 0 
+        ? paidInvoices.reduce((sum, i) => sum + Number(i.paidAmount), 0) / paidInvoices.length 
+        : 0;
+
+      res.json({
+        leads: {
+          total: leads.length,
+          thisMonth: thisMonthLeads.length,
+          change: thisMonthLeads.length - lastMonthLeads.length,
+        },
+        conversions: {
+          thisMonth: thisMonthConversions,
+          change: thisMonthConversions - lastMonthConversions,
+          rate: thisMonthLeads.length > 0 ? Math.round((thisMonthConversions / thisMonthLeads.length) * 100) : 0,
+        },
+        revenue: {
+          thisMonth: thisMonthRevenue,
+          change: thisMonthRevenue - lastMonthRevenue,
+          avgDealSize: Math.round(avgDealSize),
+        },
+        leadScores: { hot: hotLeads, warm: warmLeads, cold: coldLeads },
+        followUps: { pending: pendingFollowUps, overdue: overdueFollowUps },
+        tasks: { total: tasks.length, completed: completedTasks, rate: taskCompletionRate },
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

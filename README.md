@@ -291,5 +291,106 @@ If your website is on a different domain than the CRM, you may need to configure
 - **Calendar Sync**: One-way ICS export only (no two-way sync)
 - **Recurring Invoices**: Manual generation required (no auto-creation)
 - **Multi-tenant**: Single organization only
-- **Audit Log**: No activity logging for compliance
 - **Backup/Restore**: No built-in data backup functionality
+
+---
+
+## Advanced Features Report
+
+### A) AI & Automation
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| AI Lead Scoring (Hot/Warm/Cold) | Added | Algorithm scores based on source, pipeline stage, engagement, recency |
+| Auto Follow-up Automation Rules | Added | Schema and API ready, trigger/action based rules |
+| AI Reply / Message Generator | Not Implemented | Would require LLM integration |
+
+### B) Communication System
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| WhatsApp Full Inbox | Partial | wa.me links only, no inbox |
+| Email System Integration | Not Implemented | Would require email service |
+| Call Recording + Call Logs | Added | Full CRUD for call logs with duration, outcome, notes |
+
+### C) Multi-Channel Lead Tracking
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Facebook + Google Leads Auto Sync | Not Implemented | Would require Meta/Google API integration |
+| UTM Tracking + Campaign Analytics | Added | 5 UTM fields on leads, campaign tracking |
+
+### D) Agency Growth Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Subscription Plans + Auto Billing | Not Implemented | Existing recurring invoices cover basic needs |
+| Package Builder | Existing | Basic/Standard/Premium packages |
+| Client Onboarding Form + Auto Setup | Not Implemented | Manual client creation exists |
+
+### E) Delivery / Project Operations
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Marketing Checklist System | Added | Checklists with items per client |
+| Creative & Files Manager | Not Implemented | No file storage |
+| Approval System (Client Approval) | Not Implemented | Would require workflow system |
+
+### F) Reporting Advanced
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Performance Report Generator (PDF) | Partial | Browser print to PDF |
+| Real-time KPI Dashboard | Added | Enhanced /api/dashboard/kpis endpoint |
+
+### G) Enterprise Security
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Permission Based Access (fine-grained) | Existing | 5-role RBAC system |
+| Activity Log (audit) | Added | Full audit trail with activity_logs table |
+| Data Backup + Restore | Not Implemented | Would require storage solution |
+
+### H) Extra Power Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Duplicate Lead Detector | Added | API to find and merge duplicates |
+| Lead Distribution (Round Robin) | Added | Settings UI and distribution algorithm |
+| Multi-Branch Support | Not Implemented | Single organization only |
+| Referral System + Affiliate | Not Implemented | Would require referral tracking |
+
+### New Database Models
+
+| Table | Purpose |
+|-------|---------|
+| automation_rules | Store automation triggers and actions |
+| call_logs | Track call history with leads/clients |
+| checklists | Marketing delivery checklists per client |
+| checklist_items | Individual items within checklists |
+| distribution_settings | Round robin lead distribution config |
+
+### New API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| /api/leads/:id/score | POST | Recalculate lead score |
+| /api/leads/score-all | POST | Score all leads |
+| /api/leads/duplicates | GET | Find duplicate leads |
+| /api/leads/merge | POST | Merge duplicate leads |
+| /api/leads/distribute | POST | Distribute unassigned leads |
+| /api/automation-rules | GET/POST/PATCH/DELETE | Manage automation rules |
+| /api/call-logs | GET/POST/DELETE | Manage call logs |
+| /api/activity-logs | GET | View audit trail |
+| /api/distribution-settings | GET/PATCH | Configure lead distribution |
+| /api/checklists | GET/POST/DELETE | Manage client checklists |
+| /api/checklists/:id/items | GET/POST | Manage checklist items |
+| /api/checklist-items/:id | PATCH/DELETE | Update/delete items |
+| /api/dashboard/kpis | GET | Enhanced KPI metrics |
+
+### Summary
+
+- **Added**: 11 features (AI Scoring, Automation Rules, UTM Tracking, Activity Logs, Call Logs, Checklists, Duplicate Detector, Lead Distribution, KPI Dashboard)
+- **Existing**: 2 features (Package Builder, RBAC)
+- **Partial**: 2 features (WhatsApp, PDF Reports)
+- **Not Implemented**: 8 features (require external integrations or complex infrastructure)

@@ -95,6 +95,12 @@ const leadFormSchema = z.object({
 
 type LeadFormData = z.infer<typeof leadFormSchema>;
 
+const scoreColors: Record<string, string> = {
+  hot: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  warm: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  cold: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+};
+
 const statusColors: Record<string, string> = {
   new: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   interested: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -401,6 +407,15 @@ export default function LeadsPage() {
       cell: (lead: Lead) => (
         <Badge className={statusColors[lead.status] || ""}>
           {lead.status.replace("_", " ")}
+        </Badge>
+      ),
+    },
+    {
+      key: "score",
+      header: "Score",
+      cell: (lead: Lead) => (
+        <Badge className={scoreColors[(lead as any).score] || scoreColors.warm}>
+          {((lead as any).score || "warm").toUpperCase()}
         </Badge>
       ),
     },
