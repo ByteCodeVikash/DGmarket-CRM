@@ -21,6 +21,7 @@ export interface IStorage {
   
   // Leads
   getLead(id: string): Promise<Lead | undefined>;
+  findLeadByMobileOrEmail(mobile: string, email?: string, excludeId?: string): Promise<Lead | undefined>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: string, lead: Partial<InsertLead>): Promise<Lead | undefined>;
   deleteLead(id: string): Promise<void>;
@@ -125,6 +126,17 @@ export class DatabaseStorage implements IStorage {
   async getLead(id: string): Promise<Lead | undefined> {
     const [lead] = await db.select().from(leads).where(eq(leads.id, id));
     return lead || undefined;
+  }
+
+  async findLeadByMobileOrEmail(mobile: string, email?: string, excludeId?: string): Promise<Lead | undefined> {
+    const allLeads = await db.select().from(leads);
+    const match = allLeads.find(lead => {
+      if (excludeId && lead.id === excludeId) return false;
+      if (lead.mobile === mobile) return true;
+      if (email && lead.email && lead.email === email) return true;
+      return false;
+    });
+    return match;
   }
 
   async createLead(insertLead: InsertLead): Promise<Lead> {

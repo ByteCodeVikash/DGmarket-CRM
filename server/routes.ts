@@ -179,7 +179,7 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/leads", requireAuth, async (req, res) => {
     try {
       let leads = await storage.getAllLeads();
-      const { search, status, source } = req.query;
+      const { search, status, source, sortBy, sortOrder, page, limit } = req.query;
       
       if (search && typeof search === "string") {
         const searchLower = search.toLowerCase();
@@ -199,7 +199,30 @@ export async function registerRoutes(server: Server, app: Express) {
         leads = leads.filter(lead => lead.source === source);
       }
       
-      res.json(leads);
+      if (sortBy && typeof sortBy === "string") {
+        const order = sortOrder === "asc" ? 1 : -1;
+        leads.sort((a: any, b: any) => {
+          if (a[sortBy] < b[sortBy]) return -1 * order;
+          if (a[sortBy] > b[sortBy]) return 1 * order;
+          return 0;
+        });
+      }
+      
+      const totalCount = leads.length;
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = parseInt(limit as string) || 50;
+      const startIndex = (pageNum - 1) * limitNum;
+      const paginatedLeads = leads.slice(startIndex, startIndex + limitNum);
+      
+      res.json({
+        data: paginatedLeads,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limitNum)
+        }
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -220,6 +243,14 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/leads", requireAuth, async (req, res) => {
     try {
       const user = req.user as User;
+      const { mobile, email } = req.body;
+      
+      const existingLead = await storage.findLeadByMobileOrEmail(mobile, email);
+      if (existingLead) {
+        const duplicateField = existingLead.mobile === mobile ? "mobile number" : "email";
+        return res.status(400).json({ message: `A lead with this ${duplicateField} already exists` });
+      }
+      
       const lead = await storage.createLead({ ...req.body, ownerId: req.body.ownerId || user.id });
       res.status(201).json(lead);
     } catch (error: any) {
@@ -229,6 +260,16 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.patch("/api/leads/:id", requireAuth, async (req, res) => {
     try {
+      const { mobile, email } = req.body;
+      
+      if (mobile || email) {
+        const existingLead = await storage.findLeadByMobileOrEmail(mobile || "", email, req.params.id);
+        if (existingLead) {
+          const duplicateField = mobile && existingLead.mobile === mobile ? "mobile number" : "email";
+          return res.status(400).json({ message: `A lead with this ${duplicateField} already exists` });
+        }
+      }
+      
       const lead = await storage.updateLead(req.params.id, req.body);
       if (!lead) {
         return res.status(404).json({ message: "Lead not found" });
@@ -271,6 +312,21 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const user = req.user as User;
       const followUp = await storage.createFollowUp({ ...req.body, userId: user.id });
+      
+      let leadName = "a lead";
+      if (req.body.leadId) {
+        const lead = await storage.getLead(req.body.leadId);
+        if (lead) leadName = lead.name;
+      }
+      
+      await storage.createNotification({
+        userId: user.id,
+        title: "Follow-up Scheduled",
+        message: `Follow-up with ${leadName} scheduled for ${new Date(req.body.scheduledAt).toLocaleString()}`,
+        type: "follow_up",
+        link: `/follow-ups`,
+      });
+      
       res.status(201).json(followUp);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

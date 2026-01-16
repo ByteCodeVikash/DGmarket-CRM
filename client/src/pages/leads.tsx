@@ -21,6 +21,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -74,6 +75,7 @@ const leadFormSchema = z.object({
   city: z.string().optional(),
   source: z.string(),
   status: z.string(),
+  notes: z.string().optional(),
   ownerId: z.string().optional(),
 });
 
@@ -97,23 +99,44 @@ export default function LeadsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const pageSize = 20;
+
   const buildLeadsUrl = () => {
     const params = new URLSearchParams();
     if (searchQuery) params.append("search", searchQuery);
     if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
     if (sourceFilter && sourceFilter !== "all") params.append("source", sourceFilter);
-    const queryString = params.toString();
-    return queryString ? `/api/leads?${queryString}` : "/api/leads";
+    params.append("sortBy", sortBy);
+    params.append("sortOrder", sortOrder);
+    params.append("page", currentPage.toString());
+    params.append("limit", pageSize.toString());
+    return `/api/leads?${params.toString()}`;
   };
 
-  const { data: leads = [], isLoading } = useQuery<Lead[]>({
-    queryKey: ["/api/leads", searchQuery, statusFilter, sourceFilter],
+  interface LeadsResponse {
+    data: Lead[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }
+
+  const { data: leadsResponse, isLoading } = useQuery<LeadsResponse>({
+    queryKey: ["/api/leads", searchQuery, statusFilter, sourceFilter, sortBy, sortOrder, currentPage],
     queryFn: async () => {
       const res = await fetch(buildLeadsUrl(), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch leads");
       return res.json();
     },
   });
+
+  const leads = leadsResponse?.data || [];
+  const pagination = leadsResponse?.pagination;
 
   const { data: users = [] } = useQuery<UserType[]>({
     queryKey: ["/api/users"],
@@ -128,6 +151,7 @@ export default function LeadsPage() {
       city: "",
       source: "website",
       status: "new",
+      notes: "",
       ownerId: "",
     },
   });
@@ -195,6 +219,7 @@ export default function LeadsPage() {
       city: lead.city || "",
       source: lead.source,
       status: lead.status,
+      notes: lead.notes || "",
       ownerId: lead.ownerId || "",
     });
   };
@@ -441,6 +466,23 @@ export default function LeadsPage() {
                   </div>
                   <FormField
                     control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Add any notes about this lead..."
+                            {...field}
+                            data-testid="input-lead-notes"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name="ownerId"
                     render={({ field }) => (
                       <FormItem>
@@ -490,12 +532,15 @@ export default function LeadsPage() {
             <Input
               placeholder="Search leads..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="pl-9"
               data-testid="input-search-leads"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setCurrentPage(1); }}>
             <SelectTrigger className="w-[150px]" data-testid="filter-status">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -508,7 +553,7 @@ export default function LeadsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <Select value={sourceFilter} onValueChange={(val) => { setSourceFilter(val); setCurrentPage(1); }}>
             <SelectTrigger className="w-[150px]" data-testid="filter-source">
               <SelectValue placeholder="Source" />
             </SelectTrigger>
@@ -521,6 +566,26 @@ export default function LeadsPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={sortBy} onValueChange={(val) => { setSortBy(val); setCurrentPage(1); }}>
+            <SelectTrigger className="w-[150px]" data-testid="filter-sortby">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="createdAt">Date Created</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="source">Source</SelectItem>
+              <SelectItem value="city">City</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            data-testid="button-sort-order"
+          >
+            {sortOrder === "asc" ? "↑" : "↓"}
+          </Button>
         </div>
 
         {/* Data Table */}
@@ -530,6 +595,38 @@ export default function LeadsPage() {
           isLoading={isLoading}
           emptyMessage="No leads found. Add your first lead to get started."
         />
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between px-2">
+            <p className="text-sm text-muted-foreground">
+              Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} leads
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                data-testid="button-prev-page"
+              >
+                Previous
+              </Button>
+              <span className="text-sm">
+                Page {pagination.page} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage >= pagination.totalPages}
+                data-testid="button-next-page"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation */}

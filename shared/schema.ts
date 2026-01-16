@@ -37,6 +37,7 @@ export const leads = pgTable("leads", {
   source: text("source").notNull().default("website"),
   status: text("status").notNull().default("new"),
   pipelineStage: text("pipeline_stage").notNull().default("new_lead"),
+  notes: text("notes"),
   ownerId: varchar("owner_id").references(() => users.id),
   campaignId: varchar("campaign_id").references(() => campaigns.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
