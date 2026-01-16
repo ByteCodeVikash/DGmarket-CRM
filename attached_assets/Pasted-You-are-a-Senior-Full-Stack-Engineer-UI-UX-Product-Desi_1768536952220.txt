@@ -1,0 +1,376 @@
+You are a Senior Full-Stack Engineer + UI/UX Product Designer.
+
+Build a complete Digital Marketing CRM Web App with a corporate, professional, modern business UI (clean layout, subtle shadows, strong typography, consistent spacing, premium dashboard look).
+
+Tech Stack (must follow)
+
+Frontend: Next.js (App Router) + TypeScript
+
+UI: TailwindCSS + shadcn/ui
+
+Backend/API: Next.js API routes
+
+Database: PostgreSQL (Prisma ORM)
+
+Auth: NextAuth (Credentials login) with Role Based Access (RBAC)
+
+State: React Query or simple fetch (your choice)
+
+Validation: Zod
+
+Notifications: toast system
+
+Charts: Recharts (for reports dashboard)
+
+File Upload: simple local storage or cloud-ready structure
+
+Generate PDFs: use a PDF generation library (example: pdf-lib or react-pdf)
+
+Roles & Permission System (RBAC)
+
+Create these roles:
+
+Admin (full control)
+
+Manager
+
+Sales Executive
+
+Support Staff
+
+Client (portal access)
+
+Permissions:
+
+Admin: everything
+
+Manager: leads, tasks, campaigns, reports
+
+Sales: leads, follow-ups, pipeline, quotations
+
+Support: tasks + clients limited view
+
+Client: client portal only (their invoices, reports, approvals)
+
+✅ Modules / Pages Required
+
+Build these pages with a left sidebar + top header layout:
+
+Dashboard
+
+Leads
+
+Follow-ups
+
+Pipeline (Kanban Board)
+
+Clients
+
+Services
+
+Tasks
+
+Quotations
+
+Invoices
+
+Payments
+
+Team/Users
+
+Campaigns
+
+Reports
+
+Settings
+
+Client Portal (Client role only)
+
+✅ Core Features (Must Implement)
+1) Lead Management
+
+Add/Edit/Delete Lead
+
+Lead fields:
+
+Name, Mobile, Email, City
+
+Lead Source: Facebook / Instagram / Google / Website / Referral
+
+Lead Status: New / Interested / Follow-up / Converted / Not Interested
+
+Lead Owner (assigned user)
+
+Lead Notes (timeline style notes)
+
+Search, filters, sorting
+
+Duplicate lead prevention based on Mobile/Email
+
+2) Follow-up & Reminder System
+
+Set next follow-up date & time
+
+Auto reminders (basic scheduler + notifications)
+
+Missed follow-up list
+
+Calendar view (monthly/weekly)
+
+3) Pipeline / Sales Funnel (Kanban)
+
+Stages:
+
+New Lead, Contacted, Qualified, Proposal Sent, Negotiation, Won, Lost
+
+Drag & Drop between stages
+
+Each card shows name, phone, source, owner, next follow-up
+
+4) Client Management
+
+Convert lead to client
+
+Client Profile:
+
+Company name
+
+Service plan (SEO / Ads / Social Media)
+
+Billing details
+
+Contract start date / end date
+
+5) Service Management
+
+Services list:
+
+Facebook Ads, Google Ads, SEO, Website Design, Social Media Management, Content Writing
+
+Assign services to clients
+
+Service status: Active / Paused / Completed
+
+6) Task & Team Management
+
+Create task:
+
+Title, Description, Priority, Deadline
+
+Assign to user
+
+Link to lead/client
+
+Task status: Pending / In Progress / Done
+
+My Tasks page for each user
+
+7) Proposal / Quotation Generator
+
+Pre-made packages:
+
+Basic / Standard / Premium (editable)
+
+Create quotation for a lead/client
+
+Download quotation as PDF
+
+Send via:
+
+WhatsApp link
+
+Email (basic email placeholder)
+
+8) Invoicing & Payment Tracking
+
+Generate invoices
+
+Due amount calculation
+
+Paid/Unpaid status
+
+Payment date
+
+Monthly recurring payment system (subscription-style invoices)
+
+9) WhatsApp + Calling Integration
+
+One-click WhatsApp message link (wa.me)
+
+Templates:
+
+"Sir follow-up karna tha..."
+
+"Proposal bhej raha hu..."
+
+"Payment reminder..."
+
+Call log notes for lead/client
+
+10) Reports & Dashboard
+
+Dashboard widgets:
+
+Total leads
+
+Today follow-ups
+
+Converted clients
+
+Total revenue
+
+Pending payments
+
+Team performance
+Reports page:
+
+Monthly leads chart
+
+Conversion rate chart
+
+Revenue chart
+
+11) Marketing Campaign Tracking
+
+Campaign fields:
+
+Name (e.g., Diwali Ads)
+
+Platform (FB/Google)
+
+Budget
+
+Leads count
+
+Conversion count
+
+Link campaigns to leads (optional mapping)
+
+12) Role Management
+
+Admin can create users, assign roles
+
+Role-based access across all pages
+
+✅ Premium Features (Must Add)
+
+Auto Lead Capture (basic)
+
+Create API endpoints:
+
+POST /api/leads/capture
+
+This will allow:
+
+Website form integration
+
+Facebook lead form integration later
+
+Bulk Import/Export
+
+Import leads via CSV upload
+
+Export leads to CSV
+
+Client Portal
+Client can:
+
+Login
+
+See their invoices
+
+See reports (basic)
+
+Download files
+
+Recurring Billing Reminder
+
+If invoice is due in 2 days → highlight in dashboard and notify admin/manager
+
+Google Calendar Sync (basic setup)
+
+Provide "Export Follow-ups to Google Calendar" using .ics file generation
+
+✅ UI/UX Rules (Very Important)
+
+Corporate professional design
+
+Responsive design (desktop first, mobile friendly)
+
+Use shadcn/ui components: Card, Button, Table, Dialog, Badge, Dropdown, Tabs
+
+Use consistent spacing, clean grid layout
+
+Use icons from lucide-react
+
+Use toast notifications for actions
+
+Use loading states & empty states
+
+Use confirm dialogs for delete
+
+Use pagination for big lists
+
+✅ Database Design (Prisma Models Required)
+
+Create Prisma models for:
+
+User (with role)
+
+Lead
+
+LeadNote
+
+FollowUp
+
+Client
+
+Service
+
+ClientService
+
+Task
+
+Quotation
+
+Invoice
+
+Payment
+
+Campaign
+
+ActivityLog (audit)
+
+Notification (for reminders)
+
+✅ Seed Data (Required)
+
+Add seed script:
+
+Create Admin user:
+
+email: admin@crm.com
+
+password: admin123
+
+Create sample leads, clients, tasks, invoices
+
+✅ Deliverables
+
+Fully working app in Replit
+
+Prisma migrations included
+
+Clean folder structure
+
+README with:
+
+How to run
+
+How to login
+
+How to setup DB
+
+How to deploy
+
+Start coding now. Do not skip features. Build it end-to-end.
