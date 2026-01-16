@@ -590,9 +590,12 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
       const tasks = await storage.getAllTasks();
-      const withAssignees = await Promise.all(
+      const withRelations = await Promise.all(
         tasks.map(async t => {
           let assignee;
+          let lead;
+          let client;
+          
           if (t.assigneeId) {
             const user = await storage.getUser(t.assigneeId);
             if (user) {
@@ -600,10 +603,19 @@ export async function registerRoutes(server: Server, app: Express) {
               assignee = sanitized;
             }
           }
-          return { ...t, assignee };
+          
+          if (t.leadId) {
+            lead = await storage.getLead(t.leadId);
+          }
+          
+          if (t.clientId) {
+            client = await storage.getClient(t.clientId);
+          }
+          
+          return { ...t, assignee, lead, client };
         })
       );
-      res.json(withAssignees);
+      res.json(withRelations);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

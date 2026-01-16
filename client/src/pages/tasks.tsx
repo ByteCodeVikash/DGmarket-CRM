@@ -14,6 +14,10 @@ import {
   Calendar,
   User,
   Check,
+  Filter,
+  X,
+  Building2,
+  UserCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -98,11 +102,18 @@ export default function TasksPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showMyTasks, setShowMyTasks] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [dueDateFilter, setDueDateFilter] = useState<string>("all");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: tasks = [], isLoading } = useQuery<TaskWithRelations[]>({
     queryKey: ["/api/tasks"],
+  });
+
+  const { data: currentUser } = useQuery<UserType>({
+    queryKey: ["/api/user"],
   });
 
   const { data: users = [] } = useQuery<UserType[]>({
@@ -134,9 +145,12 @@ export default function TasksPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
+      const dueDate = data.dueDate && data.dueDate.trim() 
+        ? new Date(data.dueDate).toISOString() 
+        : null;
       const response = await apiRequest("POST", "/api/tasks", {
         ...data,
-        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
+        dueDate,
       });
       return response.json();
     },
@@ -213,9 +227,64 @@ export default function TasksPage() {
     updateMutation.mutate({ id: task.id, data: { status: newStatus } });
   };
 
-  const pendingTasks = tasks.filter((t) => t.status === "pending");
-  const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
-  const doneTasks = tasks.filter((t) => t.status === "done");
+  // Apply filters
+  const filterTasks = (taskList: TaskWithRelations[]) => {
+    let filtered = taskList;
+    
+    // My Tasks filter
+    if (showMyTasks && currentUser) {
+      filtered = filtered.filter(t => t.assigneeId === currentUser.id);
+    }
+    
+    // Assignee filter
+    if (assigneeFilter !== "all") {
+      filtered = filtered.filter(t => t.assigneeId === assigneeFilter);
+    }
+    
+    // Due date filter
+    if (dueDateFilter !== "all") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const weekEnd = new Date(today);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      
+      filtered = filtered.filter(t => {
+        if (!t.dueDate) return dueDateFilter === "no_date";
+        const dueDate = new Date(t.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        
+        switch (dueDateFilter) {
+          case "overdue":
+            return dueDate < today;
+          case "today":
+            return dueDate.getTime() === today.getTime();
+          case "this_week":
+            return dueDate >= today && dueDate <= weekEnd;
+          case "no_date":
+            return false;
+          default:
+            return true;
+        }
+      });
+    }
+    
+    return filtered;
+  };
+
+  const filteredTasks = filterTasks(tasks);
+  const pendingTasks = filteredTasks.filter((t) => t.status === "pending");
+  const inProgressTasks = filteredTasks.filter((t) => t.status === "in_progress");
+  const doneTasks = filteredTasks.filter((t) => t.status === "done");
+
+  const hasActiveFilters = showMyTasks || assigneeFilter !== "all" || dueDateFilter !== "all";
+
+  const clearFilters = () => {
+    setShowMyTasks(false);
+    setAssigneeFilter("all");
+    setDueDateFilter("all");
+  };
 
   const isFormOpen = isCreateOpen || editingTask !== null;
 
@@ -272,6 +341,18 @@ export default function TasksPage() {
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <User className="h-3 w-3" />
                   {task.assignee.name}
+                </div>
+              )}
+              {task.lead && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <UserCircle className="h-3 w-3" />
+                  {task.lead.name}
+                </div>
+              )}
+              {task.client && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Building2 className="h-3 w-3" />
+                  {task.client.companyName}
                 </div>
               )}
             </div>
@@ -422,6 +503,64 @@ export default function TasksPage() {
                       </FormItem>
                     )}
                   />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="leadId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Link to Lead</FormLabel>
+                          <Select 
+                            onValueChange={(val) => field.onChange(val === "none" ? "" : val)} 
+                            defaultValue={field.value || "none"}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-task-lead">
+                                <SelectValue placeholder="Select lead (optional)" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {leads.map((lead) => (
+                                <SelectItem key={lead.id} value={lead.id}>
+                                  {lead.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="clientId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Link to Client</FormLabel>
+                          <Select 
+                            onValueChange={(val) => field.onChange(val === "none" ? "" : val)} 
+                            defaultValue={field.value || "none"}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-task-client">
+                                <SelectValue placeholder="Select client (optional)" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {clients.map((client) => (
+                                <SelectItem key={client.id} value={client.id}>
+                                  {client.companyName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <DialogFooter>
                     <Button
                       type="submit"
@@ -441,17 +580,61 @@ export default function TasksPage() {
         }
       />
 
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant={showMyTasks ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowMyTasks(!showMyTasks)}
+            data-testid="button-my-tasks"
+          >
+            <UserCircle className="mr-2 h-4 w-4" />
+            My Tasks
+          </Button>
+          
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="w-40" data-testid="select-filter-assignee">
+              <SelectValue placeholder="Assigned to" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Users</SelectItem>
+              {users.map(user => (
+                <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
+            <SelectTrigger className="w-36" data-testid="select-filter-duedate">
+              <SelectValue placeholder="Due date" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Dates</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="this_week">This Week</SelectItem>
+              <SelectItem value="no_date">No Due Date</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+              <X className="mr-1 h-4 w-4" />
+              Clear
+            </Button>
+          )}
+        </div>
+
         <Tabs defaultValue="all" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="all" data-testid="tab-all-tasks">All ({tasks.length})</TabsTrigger>
+            <TabsTrigger value="all" data-testid="tab-all-tasks">All ({filteredTasks.length})</TabsTrigger>
             <TabsTrigger value="pending" data-testid="tab-pending-tasks">Pending ({pendingTasks.length})</TabsTrigger>
             <TabsTrigger value="in_progress" data-testid="tab-inprogress-tasks">In Progress ({inProgressTasks.length})</TabsTrigger>
             <TabsTrigger value="done" data-testid="tab-done-tasks">Done ({doneTasks.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="all" className="space-y-3">
-            {tasks.length === 0 ? (
+            {filteredTasks.length === 0 ? (
               <Card>
                 <CardContent className="flex h-64 flex-col items-center justify-center gap-2 text-muted-foreground">
                   <CheckSquare className="h-10 w-10" />
@@ -460,7 +643,7 @@ export default function TasksPage() {
               </Card>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {tasks.map((task) => (
+                {filteredTasks.map((task) => (
                   <TaskCard key={task.id} task={task} />
                 ))}
               </div>
