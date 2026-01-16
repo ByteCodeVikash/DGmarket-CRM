@@ -2,7 +2,8 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, seedAdminUser, hashPassword } from "./auth";
-import { User, Lead, Client } from "@shared/schema";
+import { User, Lead, Client, leadSources } from "@shared/schema";
+import { z } from "zod";
 
 function requireAuth(req: any, res: any, next: any) {
   if (!req.isAuthenticated()) {
@@ -30,6 +31,76 @@ export async function registerRoutes(server: Server, app: Express) {
   
   // Seed admin user
   await seedAdminUser();
+
+  // Lead Capture API - Public endpoint for external website forms
+  const captureLeadSchema = z.object({
+    name: z.string().min(2, "Name must be at least 2 characters"),
+    mobile: z.string().min(10, "Mobile must be at least 10 digits"),
+    email: z.string().email().optional().or(z.literal("")),
+    city: z.string().optional(),
+    source: z.enum(leadSources).optional().default("website"),
+    notes: z.string().optional(),
+    campaignId: z.string().optional(),
+  });
+
+  app.post("/api/leads/capture", async (req, res) => {
+    try {
+      // Validate request body with Zod
+      const parseResult = captureLeadSchema.safeParse(req.body);
+      
+      if (!parseResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: parseResult.error.errors.map(e => ({
+            field: e.path.join("."),
+            message: e.message
+          }))
+        });
+      }
+      
+      const data = parseResult.data;
+      
+      // Check for duplicate lead by mobile or email
+      const existingLead = await storage.findLeadByMobileOrEmail(
+        data.mobile,
+        data.email || undefined
+      );
+      
+      if (existingLead) {
+        return res.status(409).json({
+          success: false,
+          message: "A lead with this mobile number or email already exists",
+          leadId: existingLead.id
+        });
+      }
+      
+      // Create the lead with proper source
+      const lead = await storage.createLead({
+        name: data.name,
+        mobile: data.mobile,
+        email: data.email || null,
+        city: data.city || null,
+        source: data.source,
+        status: "new",
+        notes: data.notes || null,
+        campaignId: data.campaignId || null,
+        ownerId: null, // Will be assigned later by CRM user
+      });
+      
+      res.status(201).json({
+        success: true,
+        message: "Lead captured successfully",
+        leadId: lead.id
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: process.env.NODE_ENV === "development" ? error.message : undefined
+      });
+    }
+  });
 
   // Dashboard stats
   app.get("/api/dashboard/stats", requireAuth, async (req, res) => {
