@@ -181,10 +181,16 @@ export default function QuotationsPage() {
   });
 
   const handleSubmit = (data: QuotationFormData) => {
+    const cleanedData = {
+      ...data,
+      leadId: data.leadId || undefined,
+      clientId: data.clientId || undefined,
+      validUntil: data.validUntil || undefined,
+    };
     if (editingQuotation) {
-      updateMutation.mutate({ id: editingQuotation.id, data });
+      updateMutation.mutate({ id: editingQuotation.id, data: cleanedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(cleanedData);
     }
   };
 

@@ -181,10 +181,15 @@ export default function TasksPage() {
   });
 
   const handleSubmit = (data: TaskFormData) => {
+    const cleanedData: any = { ...data };
+    if (!cleanedData.assigneeId) delete cleanedData.assigneeId;
+    if (!cleanedData.leadId) delete cleanedData.leadId;
+    if (!cleanedData.clientId) delete cleanedData.clientId;
+    if (!cleanedData.dueDate) delete cleanedData.dueDate;
     if (editingTask) {
-      updateMutation.mutate({ id: editingTask.id, data });
+      updateMutation.mutate({ id: editingTask.id, data: cleanedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(cleanedData);
     }
   };
 

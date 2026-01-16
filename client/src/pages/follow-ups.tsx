@@ -117,7 +117,9 @@ export default function FollowUpsPage() {
   });
 
   const handleSubmit = (data: FollowUpForm) => {
-    createMutation.mutate(data);
+    const cleanedData: any = { ...data };
+    if (!cleanedData.leadId) delete cleanedData.leadId;
+    createMutation.mutate(cleanedData);
   };
 
   const handleWhatsApp = (mobile: string) => {

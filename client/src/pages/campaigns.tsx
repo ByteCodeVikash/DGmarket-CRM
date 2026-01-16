@@ -160,10 +160,13 @@ export default function CampaignsPage() {
   });
 
   const handleSubmit = (data: CampaignFormData) => {
+    const cleanedData: any = { ...data };
+    if (!cleanedData.startDate) delete cleanedData.startDate;
+    if (!cleanedData.endDate) delete cleanedData.endDate;
     if (editingCampaign) {
-      updateMutation.mutate({ id: editingCampaign.id, data });
+      updateMutation.mutate({ id: editingCampaign.id, data: cleanedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(cleanedData);
     }
   };
 

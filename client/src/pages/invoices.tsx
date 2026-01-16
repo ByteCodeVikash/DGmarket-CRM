@@ -164,10 +164,13 @@ export default function InvoicesPage() {
   });
 
   const handleSubmit = (data: InvoiceFormData) => {
+    const cleanedData: any = { ...data };
+    if (!cleanedData.clientId) delete cleanedData.clientId;
+    if (!cleanedData.dueDate) delete cleanedData.dueDate;
     if (editingInvoice) {
-      updateMutation.mutate({ id: editingInvoice.id, data });
+      updateMutation.mutate({ id: editingInvoice.id, data: cleanedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(cleanedData);
     }
   };
 

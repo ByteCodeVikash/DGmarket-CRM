@@ -145,7 +145,10 @@ export default function PaymentsPage() {
   });
 
   const handleSubmit = (data: PaymentFormData) => {
-    createMutation.mutate(data);
+    const cleanedData: any = { ...data };
+    if (!cleanedData.invoiceId) delete cleanedData.invoiceId;
+    if (!cleanedData.paymentDate) delete cleanedData.paymentDate;
+    createMutation.mutate(cleanedData);
   };
 
   const formatCurrency = (value: string) => {
