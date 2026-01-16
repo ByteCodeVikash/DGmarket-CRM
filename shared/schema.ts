@@ -309,6 +309,49 @@ export const distributionSettings = pgTable("distribution_settings", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// WhatsApp Conversation temperature tags
+export const conversationTags = ["hot", "warm", "cold"] as const;
+
+// WhatsApp Conversations (for CRM inbox)
+export const whatsappConversations = pgTable("whatsapp_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  phone: text("phone").notNull(),
+  leadId: varchar("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
+  assignedUserId: varchar("assigned_user_id").references(() => users.id),
+  tag: text("tag").default("warm"), // hot, warm, cold
+  contactName: text("contact_name"), // cached name for display
+  lastMessageAt: timestamp("last_message_at"),
+  lastMessagePreview: text("last_message_preview"),
+  unreadCount: integer("unread_count").notNull().default(0),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// WhatsApp Messages
+export const whatsappMessages = pgTable("whatsapp_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => whatsappConversations.id, { onDelete: "cascade" }),
+  direction: text("direction").notNull(), // "in" or "out"
+  content: text("content").notNull(),
+  status: text("status").notNull().default("sent"), // sent, delivered, read, failed
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  isNote: boolean("is_note").notNull().default(false), // internal note, not real message
+  sentByUserId: varchar("sent_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Quick Reply Templates for WhatsApp
+export const quickReplyTemplates = pgTable("quick_reply_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  content: text("content").notNull(),
+  category: text("category").default("general"), // general, greeting, follow_up, closing
+  userId: varchar("user_id").references(() => users.id), // null = global template
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   leads: many(leads),
@@ -397,3 +440,15 @@ export type InsertChecklist = z.infer<typeof insertChecklistSchema>;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type InsertChecklistItem = z.infer<typeof insertChecklistItemSchema>;
 export type DistributionSettings = typeof distributionSettings.$inferSelect;
+
+// WhatsApp schemas and types
+export const insertWhatsappConversationSchema = createInsertSchema(whatsappConversations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({ id: true, createdAt: true });
+export const insertQuickReplyTemplateSchema = createInsertSchema(quickReplyTemplates).omit({ id: true, createdAt: true });
+
+export type WhatsappConversation = typeof whatsappConversations.$inferSelect;
+export type InsertWhatsappConversation = z.infer<typeof insertWhatsappConversationSchema>;
+export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
+export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
+export type QuickReplyTemplate = typeof quickReplyTemplates.$inferSelect;
+export type InsertQuickReplyTemplate = z.infer<typeof insertQuickReplyTemplateSchema>;
