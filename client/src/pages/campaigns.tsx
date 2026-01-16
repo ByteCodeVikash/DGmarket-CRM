@@ -394,7 +394,7 @@ export default function CampaignsPage() {
                   </DropdownMenu>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <p className="text-xs text-muted-foreground">Budget</p>
                       <p className="text-lg font-bold">{formatCurrency(campaign.budget)}</p>
@@ -404,6 +404,13 @@ export default function CampaignsPage() {
                       <p className="text-lg font-bold flex items-center gap-1">
                         <Users className="h-4 w-4 text-muted-foreground" />
                         {campaign.leadsCount || 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Conversions</p>
+                      <p className="text-lg font-bold flex items-center gap-1">
+                        <TrendingUp className="h-4 w-4 text-green-600" />
+                        {campaign.conversions || 0}
                       </p>
                     </div>
                   </div>

@@ -1264,10 +1264,14 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const campaigns = await storage.getAllCampaigns();
       const leads = await storage.getAllLeads();
-      const withStats = campaigns.map(c => ({
-        ...c,
-        leadsCount: leads.filter(l => l.campaignId === c.id).length,
-      }));
+      const withStats = campaigns.map(c => {
+        const campaignLeads = leads.filter(l => l.campaignId === c.id);
+        return {
+          ...c,
+          leadsCount: campaignLeads.length,
+          conversions: campaignLeads.filter(l => l.status === "converted").length,
+        };
+      });
       res.json(withStats);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
