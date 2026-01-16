@@ -136,13 +136,21 @@ export async function registerRoutes(server: Server, app: Express) {
           })
       );
       
+      // Team members count (non-client users)
+      const allUsers = await storage.getAllUsers();
+      const activeTeamMembers = allUsers.filter(u => u.role !== "client").length;
+      
+      // Converted leads count (leads with status="converted")
+      const convertedLeadsCount = leads.filter(l => l.status === "converted").length;
+      
       res.json({
         totalLeads: leads.length,
         todayFollowUps,
-        convertedClients: clients.length,
+        convertedClients: convertedLeadsCount,
         totalRevenue,
         pendingPayments,
         conversionRate,
+        activeTeamMembers,
         recentLeads,
         upcomingFollowUps,
         monthlyLeads,

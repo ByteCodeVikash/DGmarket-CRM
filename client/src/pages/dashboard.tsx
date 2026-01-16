@@ -122,9 +122,10 @@ export default function DashboardPage() {
             icon={Clock}
           />
           <StatsCard
-            title="Conversion Rate"
-            value={`${stats?.conversionRate || 0}%`}
+            title="Team Performance"
+            value={`${stats?.activeTeamMembers || 0} Active`}
             icon={TrendingUp}
+            description={`${stats?.conversionRate || 0}% conversion rate`}
           />
         </div>
 
