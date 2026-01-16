@@ -182,3 +182,114 @@ If your website is on a different domain than the CRM, you may need to configure
 
 - Email: admin@crm.com
 - Password: admin123
+
+---
+
+## QA Report
+
+### Working Features
+
+- **Authentication & Authorization**
+  - Session-based login/logout with secure password hashing
+  - Role-based access control (Admin, Manager, Sales, Support, Client)
+  - Protected routes with automatic redirect to login
+  - Client portal access for client role users
+
+- **Lead Management**
+  - Create, edit, delete leads with validation
+  - Duplicate prevention by mobile/email
+  - Status and source filtering
+  - Search functionality
+  - Pagination with sorting
+  - CSV bulk import with row-level validation
+  - CSV export with filter support
+  - WhatsApp integration (wa.me links)
+
+- **Lead Capture API**
+  - Public POST endpoint for external forms
+  - Zod validation with detailed error messages
+  - Duplicate prevention
+  - Proper JSON responses (201/400/409/500)
+
+- **Follow-up Management**
+  - Schedule follow-ups with leads
+  - Calendar view with month navigation
+  - List view with missed/today/upcoming sections
+  - Mark as complete functionality
+  - ICS export for Google Calendar integration
+
+- **Sales Pipeline**
+  - Kanban board with drag-and-drop
+  - Visual status columns (New, Contacted, Qualified, etc.)
+  - Lead cards with contact info
+
+- **Client Management**
+  - Convert leads to clients
+  - Service assignment
+  - Client details with contact info
+
+- **Invoicing System**
+  - Create invoices with line items
+  - Recurring billing support (monthly, 1-28 day)
+  - Status tracking (draft, sent, paid, overdue)
+  - PDF generation
+
+- **Quotations**
+  - Editable packages (Basic/Standard/Premium)
+  - Package templates with customization
+  - Convert quotation to invoice
+
+- **Payment Tracking**
+  - Record payments against invoices
+  - Payment method tracking
+  - Validation of payment amounts
+
+- **Campaign Management**
+  - Create marketing campaigns
+  - Track leads by campaign
+  - Budget and date tracking
+
+- **Task Management**
+  - Create tasks linked to leads/clients
+  - Priority and status tracking
+  - Due date management
+  - Filter by status
+
+- **Team Management**
+  - Add team members with role assignment
+  - Active/inactive status
+  - Role-based permissions
+
+- **Reports & Analytics**
+  - Lead conversion metrics
+  - Revenue tracking
+  - Source analysis charts
+  - Monthly trends
+
+- **UI/UX**
+  - Professional corporate design
+  - Dark/light mode toggle
+  - Responsive mobile layout
+  - Loading states on all pages
+  - Empty states with guidance
+  - Toast notifications
+  - Confirmation dialogs for destructive actions
+
+### Fixed During QA
+
+- Follow-up creation date parsing (string to Date conversion)
+- ICS export RFC5545 character escaping
+- Route protection for unauthorized URL access
+- Logout redirect clearing auth state properly
+
+### Known Limitations
+
+- **PDF Generation**: Requires browser print dialog (no server-side PDF)
+- **Email Sending**: Not implemented (would require email service integration)
+- **Real-time Updates**: No WebSocket/SSE (requires page refresh for updates)
+- **File Uploads**: No attachment support for leads/clients
+- **Calendar Sync**: One-way ICS export only (no two-way sync)
+- **Recurring Invoices**: Manual generation required (no auto-creation)
+- **Multi-tenant**: Single organization only
+- **Audit Log**: No activity logging for compliance
+- **Backup/Restore**: No built-in data backup functionality
