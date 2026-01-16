@@ -476,6 +476,87 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Packages CRUD
+  app.get("/api/packages", requireAuth, async (req, res) => {
+    try {
+      const packages = await storage.getAllPackages();
+      res.json(packages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/packages", requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const pkg = await storage.createPackage(req.body);
+      res.status(201).json(pkg);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/packages/:id", requireRole("admin", "manager"), async (req, res) => {
+    try {
+      const pkg = await storage.updatePackage(req.params.id, req.body);
+      if (!pkg) {
+        return res.status(404).json({ message: "Package not found" });
+      }
+      res.json(pkg);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/packages/:id", requireRole("admin"), async (req, res) => {
+    try {
+      await storage.deletePackage(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Seed default packages
+  app.post("/api/packages/seed", requireRole("admin"), async (req, res) => {
+    try {
+      const existingPackages = await storage.getAllPackages();
+      if (existingPackages.length > 0) {
+        return res.json({ message: "Packages already seeded", count: existingPackages.length });
+      }
+
+      const defaultPackages = [
+        { 
+          name: "Basic", 
+          description: "Essential digital marketing services", 
+          price: "15000",
+          features: JSON.stringify(["Social Media Setup", "Basic SEO", "Monthly Report"])
+        },
+        { 
+          name: "Standard", 
+          description: "Comprehensive marketing solution", 
+          price: "30000",
+          features: JSON.stringify(["Facebook Ads", "Google Ads", "SEO Optimization", "Weekly Reports", "Content Calendar"])
+        },
+        { 
+          name: "Premium", 
+          description: "Complete digital transformation", 
+          price: "50000",
+          features: JSON.stringify(["All Standard Features", "Website Design", "24/7 Support", "Dedicated Manager", "Advanced Analytics"])
+        },
+      ];
+
+      const createdPackages = [];
+      for (const pkg of defaultPackages) {
+        const created = await storage.createPackage(pkg);
+        createdPackages.push(created);
+      }
+
+      res.status(201).json({ message: "Packages seeded successfully", packages: createdPackages });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Client Services CRUD
   app.get("/api/client-services", requireAuth, async (req, res) => {
     try {
@@ -715,12 +796,20 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(404).json({ message: "Quotation not found" });
       }
       const client = quotation.clientId ? await storage.getClient(quotation.clientId) : null;
+      const lead = quotation.leadId ? await storage.getLead(quotation.leadId) : null;
       
-      const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+      const formatCurrency = (amount: string | number) => {
+        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount) || 0);
       };
       
-      const itemsHtml = (quotation.items as any[]).map((item: any) => `
+      // Parse items - could be JSON string or already parsed
+      let items: any[] = [];
+      try {
+        items = typeof quotation.items === 'string' ? JSON.parse(quotation.items) : quotation.items;
+        if (!Array.isArray(items)) items = [];
+      } catch { items = []; }
+      
+      const itemsHtml = items.map((item: any) => `
         <tr>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${item.description || item.name || 'Item'}</td>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">${item.quantity || 1}</td>
@@ -728,13 +817,18 @@ export async function registerRoutes(server: Server, app: Express) {
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency((item.quantity || 1) * (item.price || item.unitPrice || 0))}</td>
         </tr>
       `).join('');
+      
+      // Get recipient name from client or lead
+      const recipientName = client?.companyName || client?.name || lead?.name || 'N/A';
+      const recipientEmail = client?.email || lead?.email || '';
+      const recipientPhone = client?.phone || lead?.mobile || '';
 
       const html = `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Quotation ${quotation.number}</title>
+          <title>Quotation ${quotation.quotationNumber}</title>
           <style>
             body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; color: #1a202c; }
             .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
@@ -754,6 +848,7 @@ export async function registerRoutes(server: Server, app: Express) {
             .notes { background: #f8fafc; padding: 20px; border-radius: 8px; margin-top: 30px; }
             .notes h3 { color: #64748b; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
             .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 12px; }
+            .package-badge { background: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 4px; font-weight: 600; display: inline-block; margin-top: 8px; }
             @media print { body { padding: 20px; } }
           </style>
         </head>
@@ -765,22 +860,23 @@ export async function registerRoutes(server: Server, app: Express) {
             </div>
             <div style="text-align: right;">
               <div class="quotation-title">QUOTATION</div>
-              <div class="quotation-number">${quotation.number}</div>
+              <div class="quotation-number">${quotation.quotationNumber}</div>
+              <div class="package-badge">${quotation.packageName}</div>
             </div>
           </div>
           
           <div class="details">
             <div class="details-section">
               <h3>Bill To</h3>
-              <div style="font-weight: 600;">${client?.name || 'N/A'}</div>
-              <div style="color: #64748b;">${client?.email || ''}</div>
-              <div style="color: #64748b;">${client?.phone || ''}</div>
+              <div style="font-weight: 600;">${recipientName}</div>
+              <div style="color: #64748b;">${recipientEmail}</div>
+              <div style="color: #64748b;">${recipientPhone}</div>
             </div>
             <div class="details-section" style="text-align: right;">
               <h3>Details</h3>
               <div><strong>Date:</strong> ${new Date(quotation.createdAt).toLocaleDateString('en-IN')}</div>
               <div><strong>Valid Until:</strong> ${quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString('en-IN') : 'N/A'}</div>
-              <div><strong>Status:</strong> ${quotation.status}</div>
+              <div><strong>Status:</strong> ${quotation.status.charAt(0).toUpperCase() + quotation.status.slice(1)}</div>
             </div>
           </div>
           
@@ -794,7 +890,7 @@ export async function registerRoutes(server: Server, app: Express) {
               </tr>
             </thead>
             <tbody>
-              ${itemsHtml}
+              ${itemsHtml || '<tr><td colspan="4" style="padding: 12px; text-align: center; color: #64748b;">No items</td></tr>'}
             </tbody>
           </table>
           
@@ -804,12 +900,8 @@ export async function registerRoutes(server: Server, app: Express) {
               <span class="totals-value">${formatCurrency(quotation.subtotal)}</span>
             </div>
             <div class="totals-row">
-              <span class="totals-label">Tax (${quotation.taxRate || 18}%):</span>
-              <span class="totals-value">${formatCurrency(quotation.taxAmount)}</span>
-            </div>
-            <div class="totals-row">
-              <span class="totals-label">Discount:</span>
-              <span class="totals-value">-${formatCurrency(quotation.discount)}</span>
+              <span class="totals-label">Tax:</span>
+              <span class="totals-value">${formatCurrency(quotation.tax)}</span>
             </div>
             <div class="totals-row grand-total">
               <span class="totals-label">Total:</span>
@@ -834,6 +926,38 @@ export async function registerRoutes(server: Server, app: Express) {
       
       res.setHeader("Content-Type", "text/html");
       res.send(html);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Email quotation (placeholder)
+  app.post("/api/quotations/:id/email", requireAuth, async (req, res) => {
+    try {
+      const quotation = await storage.getQuotation(req.params.id);
+      if (!quotation) {
+        return res.status(404).json({ message: "Quotation not found" });
+      }
+      
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email address is required" });
+      }
+      
+      // In production, integrate with email service like SendGrid, Nodemailer, etc.
+      // For now, log and return success
+      console.log(`[Email] Sending quotation ${quotation.quotationNumber} to ${email}`);
+      
+      // Update quotation status to 'sent' if it's a draft
+      if (quotation.status === 'draft') {
+        await storage.updateQuotation(quotation.id, { status: 'sent' });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Quotation ${quotation.quotationNumber} sent to ${email}`,
+        note: "Email functionality placeholder - integrate with email service for production"
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

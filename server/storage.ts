@@ -1,9 +1,10 @@
 import {
-  users, leads, leadNotes, followUps, clients, services, clientServices,
+  users, leads, leadNotes, followUps, clients, services, clientServices, packages,
   tasks, quotations, invoices, payments, campaigns, activityLogs, notifications,
   type User, type InsertUser, type Lead, type InsertLead, type LeadNote, type InsertLeadNote,
   type FollowUp, type InsertFollowUp, type Client, type InsertClient, type Service, type InsertService,
-  type ClientService, type InsertClientService, type Task, type InsertTask, type Quotation, type InsertQuotation,
+  type ClientService, type InsertClientService, type Package, type InsertPackage,
+  type Task, type InsertTask, type Quotation, type InsertQuotation,
   type Invoice, type InsertInvoice, type Payment, type InsertPayment, type Campaign, type InsertCampaign,
   type Notification, type InsertNotification
 } from "@shared/schema";
@@ -51,6 +52,13 @@ export interface IStorage {
   updateService(id: string, service: Partial<InsertService>): Promise<Service | undefined>;
   deleteService(id: string): Promise<void>;
   getAllServices(): Promise<Service[]>;
+  
+  // Packages
+  getPackage(id: string): Promise<Package | undefined>;
+  createPackage(pkg: InsertPackage): Promise<Package>;
+  updatePackage(id: string, pkg: Partial<InsertPackage>): Promise<Package | undefined>;
+  deletePackage(id: string): Promise<void>;
+  getAllPackages(): Promise<Package[]>;
   
   // Tasks
   getTask(id: string): Promise<Task | undefined>;
@@ -248,6 +256,30 @@ export class DatabaseStorage implements IStorage {
 
   async getAllServices(): Promise<Service[]> {
     return db.select().from(services).orderBy(desc(services.createdAt));
+  }
+
+  // Packages
+  async getPackage(id: string): Promise<Package | undefined> {
+    const [pkg] = await db.select().from(packages).where(eq(packages.id, id));
+    return pkg || undefined;
+  }
+
+  async createPackage(insertPkg: InsertPackage): Promise<Package> {
+    const [pkg] = await db.insert(packages).values(insertPkg).returning();
+    return pkg;
+  }
+
+  async updatePackage(id: string, updates: Partial<InsertPackage>): Promise<Package | undefined> {
+    const [pkg] = await db.update(packages).set(updates).where(eq(packages.id, id)).returning();
+    return pkg || undefined;
+  }
+
+  async deletePackage(id: string): Promise<void> {
+    await db.delete(packages).where(eq(packages.id, id));
+  }
+
+  async getAllPackages(): Promise<Package[]> {
+    return db.select().from(packages).orderBy(desc(packages.createdAt));
   }
 
   // Tasks

@@ -95,6 +95,17 @@ export const services = pgTable("services", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Quotation Packages
+export const packages = pgTable("packages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  features: text("features"), // JSON array of feature strings
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Client Services (linking clients to services)
 export const clientServices = pgTable("client_services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -241,6 +252,7 @@ export const insertFollowUpSchema = createInsertSchema(followUps).omit({ id: tru
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true, createdAt: true });
 export const insertClientServiceSchema = createInsertSchema(clientServices).omit({ id: true, createdAt: true });
+export const insertPackageSchema = createInsertSchema(packages).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, completedAt: true });
 export const insertQuotationSchema = createInsertSchema(quotations).omit({ id: true, createdAt: true });
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true });
@@ -263,6 +275,8 @@ export type Service = typeof services.$inferSelect;
 export type InsertService = z.infer<typeof insertServiceSchema>;
 export type ClientService = typeof clientServices.$inferSelect;
 export type InsertClientService = z.infer<typeof insertClientServiceSchema>;
+export type Package = typeof packages.$inferSelect;
+export type InsertPackage = z.infer<typeof insertPackageSchema>;
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Quotation = typeof quotations.$inferSelect;

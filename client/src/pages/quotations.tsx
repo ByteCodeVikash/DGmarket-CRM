@@ -63,8 +63,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Quotation, Lead, Client } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Quotation, Lead, Client, Package } from "@shared/schema";
 
 const quotationFormSchema = z.object({
   leadId: z.string().optional(),
@@ -93,7 +93,8 @@ const statusColors: Record<string, string> = {
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
-const packages = [
+// Fallback packages if none in database
+const defaultPackages = [
   { name: "Basic", description: "Essential services", price: "15000" },
   { name: "Standard", description: "Popular choice", price: "30000" },
   { name: "Premium", description: "Complete solution", price: "50000" },
@@ -103,8 +104,11 @@ export default function QuotationsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailQuotation, setEmailQuotation] = useState<QuotationWithRelations | null>(null);
+  const [emailAddress, setEmailAddress] = useState("");
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
 
   const { data: quotations = [], isLoading } = useQuery<QuotationWithRelations[]>({
     queryKey: ["/api/quotations"],
@@ -118,6 +122,15 @@ export default function QuotationsPage() {
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
+
+  const { data: dbPackages = [] } = useQuery<Package[]>({
+    queryKey: ["/api/packages"],
+  });
+  
+  // Use database packages if available, otherwise fall back to defaults
+  const packages = dbPackages.length > 0 
+    ? dbPackages.map(p => ({ name: p.name, description: p.description || "", price: p.price }))
+    : defaultPackages;
 
   const form = useForm<QuotationFormData>({
     resolver: zodResolver(quotationFormSchema),
@@ -141,7 +154,7 @@ export default function QuotationsPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+      qc.invalidateQueries({ queryKey: ["/api/quotations"] });
       setIsCreateOpen(false);
       form.reset();
       toast({ title: "Quotation created", description: "New quotation has been created successfully." });
@@ -157,7 +170,7 @@ export default function QuotationsPage() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+      qc.invalidateQueries({ queryKey: ["/api/quotations"] });
       setEditingQuotation(null);
       form.reset();
       toast({ title: "Quotation updated", description: "Quotation has been updated successfully." });
@@ -172,9 +185,26 @@ export default function QuotationsPage() {
       await apiRequest("DELETE", `/api/quotations/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/quotations"] });
+      qc.invalidateQueries({ queryKey: ["/api/quotations"] });
       setDeleteId(null);
       toast({ title: "Quotation deleted", description: "Quotation has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const emailMutation = useMutation({
+    mutationFn: async ({ id, email }: { id: string; email: string }) => {
+      const response = await apiRequest("POST", `/api/quotations/${id}/email`, { email });
+      return response.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/quotations"] });
+      setEmailDialogOpen(false);
+      setEmailQuotation(null);
+      setEmailAddress("");
+      toast({ title: "Email sent", description: "Quotation has been sent via email." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -184,14 +214,27 @@ export default function QuotationsPage() {
   const handleSubmit = (data: QuotationFormData) => {
     const cleanedData = {
       ...data,
-      leadId: data.leadId || undefined,
-      clientId: data.clientId || undefined,
+      leadId: data.leadId && data.leadId !== "none" ? data.leadId : undefined,
+      clientId: data.clientId && data.clientId !== "none" ? data.clientId : undefined,
       validUntil: data.validUntil || undefined,
     };
     if (editingQuotation) {
       updateMutation.mutate({ id: editingQuotation.id, data: cleanedData });
     } else {
       createMutation.mutate(cleanedData);
+    }
+  };
+
+  const handleEmailSend = (quotation: QuotationWithRelations) => {
+    const defaultEmail = quotation.lead?.email || quotation.client?.email || "";
+    setEmailAddress(defaultEmail);
+    setEmailQuotation(quotation);
+    setEmailDialogOpen(true);
+  };
+
+  const handleSendEmail = () => {
+    if (emailQuotation && emailAddress) {
+      emailMutation.mutate({ id: emailQuotation.id, email: emailAddress });
     }
   };
 
@@ -281,22 +324,27 @@ export default function QuotationsPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleEdit(quotation)}>
+            <DropdownMenuItem onClick={() => handleEdit(quotation)} data-testid={`button-edit-${quotation.id}`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => window.open(`/api/quotations/${quotation.id}/pdf`, "_blank")}>
+            <DropdownMenuItem onClick={() => window.open(`/api/quotations/${quotation.id}/pdf`, "_blank")} data-testid={`button-pdf-${quotation.id}`}>
               <Download className="mr-2 h-4 w-4" />
               Download PDF
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleWhatsAppSend(quotation)}>
+            <DropdownMenuItem onClick={() => handleWhatsAppSend(quotation)} data-testid={`button-whatsapp-${quotation.id}`}>
               <MessageCircle className="mr-2 h-4 w-4" />
               Send via WhatsApp
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleEmailSend(quotation)} data-testid={`button-email-${quotation.id}`}>
+              <Send className="mr-2 h-4 w-4" />
+              Send via Email
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive"
               onClick={() => setDeleteId(quotation.id)}
+              data-testid={`button-delete-${quotation.id}`}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
@@ -345,13 +393,14 @@ export default function QuotationsPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Lead</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value || "none"}>
                             <FormControl>
                               <SelectTrigger data-testid="select-quotation-lead">
                                 <SelectValue placeholder="Select lead" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
+                              <SelectItem value="none">No Lead</SelectItem>
                               {leads.map((lead) => (
                                 <SelectItem key={lead.id} value={lead.id}>
                                   {lead.name}
@@ -363,6 +412,33 @@ export default function QuotationsPage() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={form.control}
+                      name="clientId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Client</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || "none"}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-quotation-client">
+                                <SelectValue placeholder="Select client" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">No Client</SelectItem>
+                              {clients.map((client) => (
+                                <SelectItem key={client.id} value={client.id}>
+                                  {client.companyName || client.contactName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
                       name="packageName"
@@ -544,6 +620,53 @@ export default function QuotationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={emailDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setEmailDialogOpen(false);
+          setEmailQuotation(null);
+          setEmailAddress("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Quotation via Email</DialogTitle>
+            <DialogDescription>
+              Enter the email address to send this quotation to.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email Address</label>
+              <Input
+                type="email"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                placeholder="Enter email address"
+                data-testid="input-email-address"
+              />
+            </div>
+            {emailQuotation && (
+              <div className="text-sm text-muted-foreground">
+                Sending quotation: <strong>{emailQuotation.quotationNumber}</strong>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSendEmail}
+              disabled={!emailAddress || emailMutation.isPending}
+              data-testid="button-send-email"
+            >
+              {emailMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
