@@ -86,6 +86,13 @@ export interface IStorage {
   deleteCampaign(id: string): Promise<void>;
   getAllCampaigns(): Promise<Campaign[]>;
   
+  // Client Services
+  getClientServices(clientId: string): Promise<ClientService[]>;
+  createClientService(clientService: InsertClientService): Promise<ClientService>;
+  updateClientService(id: string, clientService: Partial<InsertClientService>): Promise<ClientService | undefined>;
+  deleteClientService(id: string): Promise<void>;
+  getAllClientServices(): Promise<ClientService[]>;
+
   // Notifications
   getNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
@@ -377,6 +384,29 @@ export class DatabaseStorage implements IStorage {
 
   async getAllCampaigns(): Promise<Campaign[]> {
     return db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  }
+
+  // Client Services
+  async getClientServices(clientId: string): Promise<ClientService[]> {
+    return db.select().from(clientServices).where(eq(clientServices.clientId, clientId)).orderBy(desc(clientServices.createdAt));
+  }
+
+  async createClientService(clientService: InsertClientService): Promise<ClientService> {
+    const [created] = await db.insert(clientServices).values(clientService).returning();
+    return created;
+  }
+
+  async updateClientService(id: string, clientService: Partial<InsertClientService>): Promise<ClientService | undefined> {
+    const [updated] = await db.update(clientServices).set(clientService).where(eq(clientServices.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteClientService(id: string): Promise<void> {
+    await db.delete(clientServices).where(eq(clientServices.id, id));
+  }
+
+  async getAllClientServices(): Promise<ClientService[]> {
+    return db.select().from(clientServices).orderBy(desc(clientServices.createdAt));
   }
 
   // Notifications

@@ -447,6 +447,132 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Seed default services
+  app.post("/api/services/seed", requireRole("admin"), async (req, res) => {
+    try {
+      const existingServices = await storage.getAllServices();
+      if (existingServices.length > 0) {
+        return res.json({ message: "Services already seeded", count: existingServices.length });
+      }
+
+      const defaultServices = [
+        { name: "Facebook Ads", description: "Facebook advertising campaign management", basePrice: "15000" },
+        { name: "Google Ads", description: "Google Ads campaign setup and optimization", basePrice: "20000" },
+        { name: "SEO", description: "Search engine optimization services", basePrice: "25000" },
+        { name: "Website Design", description: "Custom website design and development", basePrice: "50000" },
+        { name: "Social Media Management", description: "Complete social media management", basePrice: "18000" },
+        { name: "Content Writing", description: "Professional content writing services", basePrice: "10000" },
+      ];
+
+      const createdServices = [];
+      for (const service of defaultServices) {
+        const created = await storage.createService(service);
+        createdServices.push(created);
+      }
+
+      res.status(201).json({ message: "Services seeded successfully", services: createdServices });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Client Services CRUD
+  app.get("/api/client-services", requireAuth, async (req, res) => {
+    try {
+      const clientId = req.query.clientId as string;
+      if (clientId) {
+        const clientServices = await storage.getClientServices(clientId);
+        // Get service details for each client service
+        const withServices = await Promise.all(
+          clientServices.map(async (cs) => {
+            const service = await storage.getService(cs.serviceId);
+            return { ...cs, service };
+          })
+        );
+        res.json(withServices);
+      } else {
+        const allClientServices = await storage.getAllClientServices();
+        const withServices = await Promise.all(
+          allClientServices.map(async (cs) => {
+            const service = await storage.getService(cs.serviceId);
+            const client = await storage.getClient(cs.clientId);
+            return { ...cs, service, client };
+          })
+        );
+        res.json(withServices);
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/client-services", requireAuth, async (req, res) => {
+    try {
+      const clientService = await storage.createClientService(req.body);
+      res.status(201).json(clientService);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/client-services/:id", requireAuth, async (req, res) => {
+    try {
+      const clientService = await storage.updateClientService(req.params.id, req.body);
+      if (!clientService) {
+        return res.status(404).json({ message: "Client service not found" });
+      }
+      res.json(clientService);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/client-services/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteClientService(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Convert Lead to Client
+  app.post("/api/leads/:id/convert", requireAuth, async (req, res) => {
+    try {
+      const lead = await storage.getLead(req.params.id);
+      if (!lead) {
+        return res.status(404).json({ message: "Lead not found" });
+      }
+
+      // Check if lead is already converted
+      if (lead.status === "converted") {
+        return res.status(400).json({ message: "Lead is already converted to a client" });
+      }
+
+      // Create client from lead data
+      const clientData = {
+        leadId: lead.id,
+        companyName: req.body.companyName || lead.name,
+        contactName: lead.name,
+        email: lead.email || "",
+        phone: lead.mobile,
+        city: lead.city || "",
+        ownerId: lead.ownerId,
+        contractStartDate: req.body.contractStartDate,
+        contractEndDate: req.body.contractEndDate,
+      };
+
+      const client = await storage.createClient(clientData);
+
+      // Update lead status to converted
+      await storage.updateLead(lead.id, { status: "converted" });
+
+      res.status(201).json(client);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Tasks CRUD
   app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
