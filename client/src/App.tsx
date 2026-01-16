@@ -23,7 +23,27 @@ import TeamPage from "@/pages/team";
 import CampaignsPage from "@/pages/campaigns";
 import ReportsPage from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
+import ClientPortalPage from "@/pages/client-portal";
 import NotFound from "@/pages/not-found";
+import { hasPermission } from "@/lib/auth";
+
+const routePermissions: Record<string, string> = {
+  "/": "dashboard",
+  "/leads": "leads",
+  "/follow-ups": "follow_ups",
+  "/pipeline": "pipeline",
+  "/clients": "clients",
+  "/services": "services",
+  "/tasks": "tasks",
+  "/quotations": "quotations",
+  "/invoices": "invoices",
+  "/payments": "payments",
+  "/team": "team",
+  "/campaigns": "campaigns",
+  "/reports": "reports",
+  "/settings": "settings",
+  "/portal": "portal",
+};
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -39,6 +59,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <Redirect to="/login" />;
+  }
+
+  // Check route permission
+  const requiredPermission = routePermissions[location];
+  if (requiredPermission && !hasPermission(user, requiredPermission)) {
+    // Redirect clients to portal, others to dashboard
+    if (user.role === "client") {
+      if (location !== "/portal") {
+        return <Redirect to="/portal" />;
+      }
+    } else {
+      return <Redirect to="/" />;
+    }
+  }
+
+  // Redirect client to portal on root
+  if (user.role === "client" && location === "/") {
+    return <Redirect to="/portal" />;
   }
 
   return <>{children}</>;
@@ -96,6 +134,7 @@ function Router() {
           <Route path="/campaigns" component={CampaignsPage} />
           <Route path="/reports" component={ReportsPage} />
           <Route path="/settings" component={SettingsPage} />
+          <Route path="/portal" component={ClientPortalPage} />
           <Route component={NotFound} />
         </Switch>
       </AppLayout>

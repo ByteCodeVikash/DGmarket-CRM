@@ -33,8 +33,12 @@ export function useAuth() {
       await apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
+      // Immediately set user to null before invalidating
+      queryClient.setQueryData(["/api/auth/me"], null);
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.clear();
+      // Force redirect to login
+      window.location.href = "/login";
     },
   });
 

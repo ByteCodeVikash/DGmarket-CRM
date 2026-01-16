@@ -1329,6 +1329,48 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Client Portal
+  app.get("/api/portal/data", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as User;
+      
+      // Find client record linked to this user (via email or direct lookup)
+      const clients = await storage.getAllClients();
+      const clientServices = await storage.getAllClientServices();
+      const allInvoices = await storage.getAllInvoices();
+      const allQuotations = await storage.getAllQuotations();
+      
+      // Find clients where user email matches client email, or user is owner
+      const userClients = clients.filter(c => 
+        c.email === user.email || c.ownerId === user.id
+      );
+      const clientIds = userClients.map(c => c.id);
+      
+      // Filter invoices and quotations for this client
+      const invoices = allInvoices.filter(inv => clientIds.includes(inv.clientId));
+      const quotations = allQuotations.filter(q => q.clientId && clientIds.includes(q.clientId));
+      
+      // Calculate totals
+      const totalSpent = invoices.reduce((sum, inv) => sum + Number(inv.paidAmount), 0);
+      const pendingPayments = invoices
+        .filter(inv => inv.status !== "paid" && inv.status !== "cancelled")
+        .reduce((sum, inv) => sum + (Number(inv.total) - Number(inv.paidAmount)), 0);
+      const activeServices = clientServices.filter(cs => 
+        clientIds.includes(cs.clientId) && cs.status === "active"
+      ).length;
+      
+      res.json({
+        invoices,
+        quotations,
+        totalSpent,
+        pendingPayments,
+        activeServices,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Reports
   app.get("/api/reports", requireAuth, async (req, res) => {
     try {

@@ -42,6 +42,7 @@ import { hasPermission } from "@/lib/auth";
 
 const mainMenuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, permission: "dashboard" },
+  { title: "Client Portal", url: "/portal", icon: Building2, permission: "portal" },
   { title: "Leads", url: "/leads", icon: Users, permission: "leads" },
   { title: "Follow-ups", url: "/follow-ups", icon: PhoneCall, permission: "follow_ups" },
   { title: "Pipeline", url: "/pipeline", icon: UserCheck, permission: "pipeline" },
