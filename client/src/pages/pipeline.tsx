@@ -42,9 +42,10 @@ export default function PipelinePage() {
   const queryClient = useQueryClient();
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
 
-  const { data: leads = [], isLoading } = useQuery<Lead[]>({
+  const { data: leadsResponse, isLoading } = useQuery<{ data: Lead[]; pagination: any }>({
     queryKey: ["/api/leads"],
   });
+  const leads = leadsResponse?.data || [];
 
   const updateStageMutation = useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {

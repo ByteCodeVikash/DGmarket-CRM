@@ -109,9 +109,10 @@ export default function TasksPage() {
     queryKey: ["/api/users"],
   });
 
-  const { data: leads = [] } = useQuery<Lead[]>({
+  const { data: leadsResponse } = useQuery<{ data: Lead[]; pagination: any }>({
     queryKey: ["/api/leads"],
   });
+  const leads = leadsResponse?.data || [];
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],

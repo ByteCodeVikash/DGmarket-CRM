@@ -73,9 +73,10 @@ export default function FollowUpsPage() {
     queryKey: ["/api/follow-ups"],
   });
 
-  const { data: leads = [] } = useQuery<Lead[]>({
+  const { data: leadsResponse } = useQuery<{ data: Lead[]; pagination: any }>({
     queryKey: ["/api/leads"],
   });
+  const leads = leadsResponse?.data || [];
 
   const form = useForm<FollowUpForm>({
     resolver: zodResolver(followUpSchema),
