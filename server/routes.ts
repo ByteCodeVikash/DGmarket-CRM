@@ -33,9 +33,11 @@ export async function registerRoutes(server: Server, app: Express) {
   // Seed admin user
   await seedAdminUser();
 
-  // Configure CORS for Vercel deployment
+  // Configure CORS for deployment
   const allowedOrigins = [
     /^https:\/\/.*\.vercel\.app$/, // All Vercel preview/production URLs
+    /^https:\/\/.*\.onrender\.com$/, // All Render URLs
+    "https://dgmarket-crm.onrender.com", // Production Render URL
     "http://localhost:5173", // Local Vite dev server
     "http://localhost:5000", // Local production build
   ];
