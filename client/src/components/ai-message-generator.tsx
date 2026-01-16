@@ -155,7 +155,7 @@ export function AIMessageGenerator({ leadId, clientId, leadName, clientName }: A
               {whatsappLink && (
                 <Button
                   onClick={openWhatsApp}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-green-600"
                   data-testid="button-send-whatsapp"
                 >
                   <MessageSquare className="mr-2 h-4 w-4" />

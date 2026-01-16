@@ -2018,6 +2018,23 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/generate-message", requireAuth, async (req, res) => {
     try {
       const { type, leadId, clientId, languageStyle } = req.body;
+      
+      // Input validation
+      const validTypes = ['whatsapp_followup', 'proposal_followup', 'payment_reminder', 'meeting_scheduling'];
+      const validLanguages = ['professional', 'professional_hindi'];
+      
+      if (!type || !validTypes.includes(type)) {
+        return res.status(400).json({ error: `Invalid message type. Must be one of: ${validTypes.join(', ')}` });
+      }
+      
+      if (!languageStyle || !validLanguages.includes(languageStyle)) {
+        return res.status(400).json({ error: `Invalid language style. Must be one of: ${validLanguages.join(', ')}` });
+      }
+      
+      if (!leadId && !clientId) {
+        return res.status(400).json({ error: 'Either leadId or clientId is required' });
+      }
+      
       const { generateMessage, generateWhatsAppLink } = await import("./messageGenerator");
       
       let context: any = { name: 'there' };
