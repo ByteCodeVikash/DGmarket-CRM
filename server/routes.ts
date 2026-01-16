@@ -108,6 +108,34 @@ export async function registerRoutes(server: Server, app: Express) {
       });
       const leadsBySource = Array.from(sourceMap.entries()).map(([source, count]) => ({ source, count }));
       
+      // Invoices due soon (within 2 days)
+      const twoDaysFromNow = new Date(today);
+      twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
+      twoDaysFromNow.setHours(23, 59, 59, 999);
+      
+      const upcomingInvoices = await Promise.all(
+        invoices
+          .filter(inv => {
+            if (inv.status === "paid" || inv.status === "cancelled") return false;
+            const dueDate = new Date(inv.dueDate);
+            return dueDate >= today && dueDate <= twoDaysFromNow;
+          })
+          .slice(0, 10)
+          .map(async inv => {
+            const client = await storage.getClient(inv.clientId);
+            return {
+              id: inv.id,
+              invoiceNumber: inv.invoiceNumber,
+              clientName: client?.companyName || "Unknown",
+              total: inv.total,
+              paidAmount: inv.paidAmount,
+              dueAmount: (Number(inv.total) - Number(inv.paidAmount)).toString(),
+              dueDate: inv.dueDate,
+              isRecurring: inv.isRecurring,
+            };
+          })
+      );
+      
       res.json({
         totalLeads: leads.length,
         todayFollowUps,
@@ -119,6 +147,7 @@ export async function registerRoutes(server: Server, app: Express) {
         upcomingFollowUps,
         monthlyLeads,
         leadsBySource,
+        upcomingInvoices,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -819,7 +848,7 @@ export async function registerRoutes(server: Server, app: Express) {
       `).join('');
       
       // Get recipient name from client or lead
-      const recipientName = client?.companyName || client?.name || lead?.name || 'N/A';
+      const recipientName = client?.companyName || client?.contactName || lead?.name || 'N/A';
       const recipientEmail = client?.email || lead?.email || '';
       const recipientPhone = client?.phone || lead?.mobile || '';
 
@@ -1017,6 +1046,147 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Invoice PDF generation
+  app.get("/api/invoices/:id/pdf", requireAuth, async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      const client = await storage.getClient(invoice.clientId);
+      
+      const formatCurrency = (amount: string | number) => {
+        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount) || 0);
+      };
+      
+      let items: any[] = [];
+      try {
+        items = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
+        if (!Array.isArray(items)) items = [];
+      } catch { items = []; }
+      
+      const itemsHtml = items.map((item: any) => `
+        <tr>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${item.description || item.name || 'Item'}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">${item.quantity || 1}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency(item.price || item.unitPrice || 0)}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency((item.quantity || 1) * (item.price || item.unitPrice || 0))}</td>
+        </tr>
+      `).join('');
+
+      const dueAmount = Number(invoice.total) - Number(invoice.paidAmount);
+      const statusColor = invoice.status === 'paid' ? '#10b981' : invoice.status === 'overdue' ? '#ef4444' : '#3b82f6';
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Invoice ${invoice.invoiceNumber}</title>
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; color: #1a202c; }
+            .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
+            .company { font-size: 24px; font-weight: bold; color: #2563eb; }
+            .invoice-title { font-size: 32px; font-weight: bold; color: #1e40af; margin-bottom: 8px; }
+            .invoice-number { color: #64748b; font-size: 14px; }
+            .status-badge { background: ${statusColor}; color: white; padding: 4px 12px; border-radius: 4px; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+            .details { display: flex; justify-content: space-between; margin-bottom: 30px; }
+            .details-section { flex: 1; }
+            .details-section h3 { color: #64748b; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            th { background: #f1f5f9; padding: 12px; text-align: left; font-weight: 600; color: #475569; }
+            .totals { text-align: right; }
+            .totals-row { display: flex; justify-content: flex-end; padding: 8px 0; }
+            .totals-label { width: 150px; color: #64748b; }
+            .totals-value { width: 150px; text-align: right; font-weight: 600; }
+            .grand-total { font-size: 18px; color: #1e40af; border-top: 2px solid #e2e8f0; padding-top: 12px; }
+            .due-amount { font-size: 16px; color: ${dueAmount > 0 ? '#ef4444' : '#10b981'}; }
+            .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 12px; }
+            @media print { body { padding: 20px; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="company">MarketPro CRM</div>
+              <p style="color: #64748b; font-size: 14px;">Digital Marketing Agency</p>
+            </div>
+            <div style="text-align: right;">
+              <div class="invoice-title">INVOICE</div>
+              <div class="invoice-number">${invoice.invoiceNumber}</div>
+              <span class="status-badge">${invoice.status.toUpperCase()}</span>
+            </div>
+          </div>
+          
+          <div class="details">
+            <div class="details-section">
+              <h3>Bill To</h3>
+              <p style="font-weight: 600; margin: 0;">${client?.companyName || 'N/A'}</p>
+              <p style="margin: 4px 0; color: #64748b;">${client?.contactName || ''}</p>
+              <p style="margin: 4px 0; color: #64748b;">${client?.email || ''}</p>
+              <p style="margin: 4px 0; color: #64748b;">${client?.phone || ''}</p>
+            </div>
+            <div class="details-section" style="text-align: right;">
+              <h3>Invoice Details</h3>
+              <p style="margin: 4px 0;"><strong>Date:</strong> ${new Date(invoice.createdAt).toLocaleDateString()}</p>
+              <p style="margin: 4px 0;"><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
+              ${invoice.isRecurring ? `<p style="margin: 4px 0;"><strong>Recurring:</strong> Day ${invoice.recurringDay} of month</p>` : ''}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="text-align: center;">Qty</th>
+                <th style="text-align: right;">Unit Price</th>
+                <th style="text-align: right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <div class="totals">
+            <div class="totals-row">
+              <span class="totals-label">Subtotal:</span>
+              <span class="totals-value">${formatCurrency(invoice.subtotal)}</span>
+            </div>
+            <div class="totals-row">
+              <span class="totals-label">Tax:</span>
+              <span class="totals-value">${formatCurrency(invoice.tax)}</span>
+            </div>
+            <div class="totals-row grand-total">
+              <span class="totals-label">Total:</span>
+              <span class="totals-value">${formatCurrency(invoice.total)}</span>
+            </div>
+            <div class="totals-row">
+              <span class="totals-label">Paid:</span>
+              <span class="totals-value">${formatCurrency(invoice.paidAmount)}</span>
+            </div>
+            <div class="totals-row due-amount">
+              <span class="totals-label">Balance Due:</span>
+              <span class="totals-value">${formatCurrency(dueAmount)}</span>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>Thank you for your business!</p>
+            <p>Generated on ${new Date().toLocaleDateString()}</p>
+          </div>
+        </body>
+        </html>
+      `;
+
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `inline; filename="invoice-${invoice.invoiceNumber}.html"`);
+      res.send(html);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Payments CRUD
   app.get("/api/payments", requireAuth, async (req, res) => {
     try {
@@ -1040,8 +1210,30 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/payments", requireAuth, async (req, res) => {
     try {
       const user = req.user as User;
+      const { invoiceId, amount } = req.body;
+      
+      // Validate payment amount
+      if (!invoiceId || !amount || Number(amount) <= 0) {
+        return res.status(400).json({ message: "Invalid payment amount" });
+      }
+      
+      // Check invoice exists and calculate due amount
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      
+      const dueAmount = Number(invoice.total) - Number(invoice.paidAmount);
+      if (dueAmount <= 0) {
+        return res.status(400).json({ message: "Invoice is already fully paid" });
+      }
+      
+      // Clamp payment to due amount (prevent overpayment)
+      const paymentAmount = Math.min(Number(amount), dueAmount);
+      
       const payment = await storage.createPayment({
         ...req.body,
+        amount: paymentAmount.toString(),
         receivedById: user.id,
       });
       res.status(201).json(payment);

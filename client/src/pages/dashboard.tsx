@@ -9,6 +9,9 @@ import {
   Clock,
   Calendar,
   ArrowUpRight,
+  AlertTriangle,
+  RefreshCw,
+  Receipt,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { StatsCard } from "@/components/stats-card";
@@ -53,6 +56,16 @@ interface DashboardStats {
   monthlyLeads: Array<{ month: string; count: number }>;
   leadsBySource: Array<{ source: string; count: number }>;
   conversionRate: number;
+  upcomingInvoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    clientName: string;
+    total: string;
+    paidAmount: string;
+    dueAmount: string;
+    dueDate: string;
+    isRecurring: boolean;
+  }>;
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444"];
@@ -114,6 +127,66 @@ export default function DashboardPage() {
             icon={TrendingUp}
           />
         </div>
+
+        {/* Billing Reminders - Invoices Due Soon */}
+        {stats?.upcomingInvoices && stats.upcomingInvoices.length > 0 && (
+          <Card className="border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20">
+            <CardHeader className="flex flex-row items-center gap-4 pb-2">
+              <div className="rounded-full bg-amber-100 p-2 dark:bg-amber-900/30">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold text-amber-800 dark:text-amber-400">
+                  Billing Reminders
+                </CardTitle>
+                <CardDescription className="text-amber-700/70 dark:text-amber-500/70">
+                  Invoices due within 2 days - Admin/Manager notification required
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" className="ml-auto" asChild>
+                <Link href="/invoices" data-testid="link-view-invoices">
+                  View All
+                  <ArrowUpRight className="ml-1 h-3 w-3" />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {stats.upcomingInvoices.map((invoice) => (
+                  <div
+                    key={invoice.id}
+                    className="flex items-center justify-between rounded-lg border border-amber-200 bg-white p-3 dark:border-amber-800 dark:bg-amber-950/30"
+                    data-testid={`invoice-reminder-${invoice.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Receipt className="h-5 w-5 text-amber-600" />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
+                          {invoice.isRecurring && (
+                            <Badge variant="outline" className="text-xs">
+                              <RefreshCw className="mr-1 h-3 w-3" />
+                              Recurring
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{invoice.clientName}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                        {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(invoice.dueAmount))}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Due: {format(new Date(invoice.dueDate), "MMM d, yyyy")}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Charts Row */}
         <div className="grid gap-6 lg:grid-cols-2">

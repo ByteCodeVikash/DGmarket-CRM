@@ -13,6 +13,8 @@ import {
   Loader2,
   Download,
   Send,
+  CreditCard,
+  RefreshCw,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -61,9 +63,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Invoice, Client, invoiceStatuses } from "@shared/schema";
+import { Invoice, Client, invoiceStatuses, paymentMethods } from "@shared/schema";
 
 const invoiceFormSchema = z.object({
   clientId: z.string().min(1, "Please select a client"),
@@ -73,9 +76,24 @@ const invoiceFormSchema = z.object({
   total: z.string().min(1, "Total is required"),
   dueDate: z.string().min(1, "Due date is required"),
   status: z.string().default("draft"),
+  isRecurring: z.boolean().default(false),
+  recurringDay: z.string().optional(),
 });
 
 type InvoiceFormData = z.infer<typeof invoiceFormSchema>;
+
+const paymentFormSchema = z.object({
+  amount: z.string().min(1, "Amount is required").refine(
+    (val) => Number(val) > 0,
+    { message: "Amount must be greater than 0" }
+  ),
+  method: z.string().min(1, "Payment method is required"),
+  paymentDate: z.string().min(1, "Payment date is required"),
+  reference: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+type PaymentFormData = z.infer<typeof paymentFormSchema>;
 
 interface InvoiceWithClient extends Invoice {
   client?: Client;
@@ -93,6 +111,7 @@ export default function InvoicesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceWithClient | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -114,6 +133,19 @@ export default function InvoicesPage() {
       total: "",
       dueDate: "",
       status: "draft",
+      isRecurring: false,
+      recurringDay: "",
+    },
+  });
+
+  const paymentForm = useForm<PaymentFormData>({
+    resolver: zodResolver(paymentFormSchema),
+    defaultValues: {
+      amount: "",
+      method: "bank_transfer",
+      paymentDate: format(new Date(), "yyyy-MM-dd"),
+      reference: "",
+      notes: "",
     },
   });
 
@@ -163,6 +195,43 @@ export default function InvoicesPage() {
     },
   });
 
+  const paymentMutation = useMutation({
+    mutationFn: async (data: PaymentFormData & { invoiceId: string }) => {
+      const response = await apiRequest("POST", "/api/payments", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      setPaymentInvoice(null);
+      paymentForm.reset();
+      toast({ title: "Payment recorded", description: "Payment has been recorded successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handlePaymentSubmit = (data: PaymentFormData) => {
+    if (!paymentInvoice) return;
+    paymentMutation.mutate({
+      ...data,
+      invoiceId: paymentInvoice.id,
+    });
+  };
+
+  const handleRecordPayment = (invoice: InvoiceWithClient) => {
+    const dueAmount = Number(invoice.total) - Number(invoice.paidAmount);
+    setPaymentInvoice(invoice);
+    paymentForm.reset({
+      amount: dueAmount.toString(),
+      method: "bank_transfer",
+      paymentDate: format(new Date(), "yyyy-MM-dd"),
+      reference: "",
+      notes: "",
+    });
+  };
+
   const handleSubmit = (data: InvoiceFormData) => {
     const cleanedData: any = { ...data };
     if (!cleanedData.clientId) delete cleanedData.clientId;
@@ -184,6 +253,8 @@ export default function InvoicesPage() {
       total: invoice.total,
       dueDate: invoice.dueDate,
       status: invoice.status,
+      isRecurring: invoice.isRecurring,
+      recurringDay: invoice.recurringDay?.toString() || "",
     });
   };
 
@@ -201,7 +272,15 @@ export default function InvoicesPage() {
       header: "Invoice",
       cell: (invoice: InvoiceWithClient) => (
         <div>
-          <p className="font-medium">{invoice.invoiceNumber}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{invoice.invoiceNumber}</p>
+            {invoice.isRecurring && (
+              <Badge variant="outline" className="text-xs">
+                <RefreshCw className="mr-1 h-3 w-3" />
+                Recurring
+              </Badge>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">{invoice.client?.companyName}</p>
         </div>
       ),
@@ -247,18 +326,25 @@ export default function InvoicesPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleEdit(invoice)}>
+            <DropdownMenuItem onClick={() => handleEdit(invoice)} data-testid={`button-edit-${invoice.id}`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, "_blank")}>
+            <DropdownMenuItem onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, "_blank")} data-testid={`button-pdf-${invoice.id}`}>
               <Download className="mr-2 h-4 w-4" />
               Download PDF
             </DropdownMenuItem>
+            {invoice.status !== "paid" && (
+              <DropdownMenuItem onClick={() => handleRecordPayment(invoice)} data-testid={`button-payment-${invoice.id}`}>
+                <CreditCard className="mr-2 h-4 w-4" />
+                Record Payment
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive"
               onClick={() => setDeleteId(invoice.id)}
+              data-testid={`button-delete-${invoice.id}`}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
@@ -421,6 +507,46 @@ export default function InvoicesPage() {
                       )}
                     />
                   </div>
+                  <div className="flex items-center gap-4">
+                    <FormField
+                      control={form.control}
+                      name="isRecurring"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-recurring"
+                            />
+                          </FormControl>
+                          <FormLabel className="font-normal">Monthly Recurring</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch("isRecurring") && (
+                      <FormField
+                        control={form.control}
+                        name="recurringDay"
+                        render={({ field }) => (
+                          <FormItem className="flex-1">
+                            <FormLabel>Recurring Day (1-28)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="28"
+                                placeholder="15"
+                                {...field}
+                                data-testid="input-recurring-day"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </div>
                   <DialogFooter>
                     <Button
                       type="submit"
@@ -468,6 +594,115 @@ export default function InvoicesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={paymentInvoice !== null} onOpenChange={(open) => {
+        if (!open) {
+          setPaymentInvoice(null);
+          paymentForm.reset();
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              {paymentInvoice && (
+                <>Record payment for invoice {paymentInvoice.invoiceNumber} - Due: {formatCurrency(String(Number(paymentInvoice.total) - Number(paymentInvoice.paidAmount)))}</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...paymentForm}>
+            <form onSubmit={paymentForm.handleSubmit(handlePaymentSubmit)} className="space-y-4">
+              <FormField
+                control={paymentForm.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input type="number" placeholder="10000" {...field} data-testid="input-payment-amount" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={paymentForm.control}
+                  name="method"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Method</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-payment-method">
+                            <SelectValue placeholder="Select method" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {paymentMethods.map((method) => (
+                            <SelectItem key={method} value={method} className="capitalize">
+                              {method.replace("_", " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={paymentForm.control}
+                  name="paymentDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Date</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} data-testid="input-payment-date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={paymentForm.control}
+                name="reference"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reference (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Transaction ID or reference" {...field} data-testid="input-payment-reference" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={paymentForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Additional notes" {...field} data-testid="input-payment-notes" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setPaymentInvoice(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={paymentMutation.isPending} data-testid="button-submit-payment">
+                  {paymentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Record Payment
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
