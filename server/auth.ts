@@ -32,7 +32,7 @@ export function setupAuth(app: Express) {
       store: new PgSession({
         pool,
         tableName: "user_sessions",
-        createTableIfMissing: true,
+        createTableIfMissing: false, // Table is created via schema migration
       }),
       secret: process.env.SESSION_SECRET || "crm-secret-key-change-in-production",
       resave: false,
