@@ -1,14 +1,15 @@
 import {
   users, leads, leadNotes, followUps, clients, services, clientServices, packages,
   tasks, quotations, invoices, payments, campaigns, activityLogs, notifications,
-  automationRules, callLogs, checklists, checklistItems, distributionSettings,
+  automationRules, automationRunLogs, callLogs, checklists, checklistItems, distributionSettings,
   type User, type InsertUser, type Lead, type InsertLead, type LeadNote, type InsertLeadNote,
   type FollowUp, type InsertFollowUp, type Client, type InsertClient, type Service, type InsertService,
   type ClientService, type InsertClientService, type Package, type InsertPackage,
   type Task, type InsertTask, type Quotation, type InsertQuotation,
   type Invoice, type InsertInvoice, type Payment, type InsertPayment, type Campaign, type InsertCampaign,
   type Notification, type InsertNotification, type ActivityLog, type InsertActivityLog,
-  type AutomationRule, type InsertAutomationRule, type CallLog, type InsertCallLog,
+  type AutomationRule, type InsertAutomationRule, type AutomationRunLog, type InsertAutomationRunLog,
+  type CallLog, type InsertCallLog,
   type Checklist, type InsertChecklist, type ChecklistItem, type InsertChecklistItem,
   type DistributionSettings
 } from "@shared/schema";
@@ -121,6 +122,12 @@ export interface IStorage {
   deleteAutomationRule(id: string): Promise<void>;
   getAllAutomationRules(): Promise<AutomationRule[]>;
   getActiveAutomationRules(): Promise<AutomationRule[]>;
+
+  // Automation Run Logs
+  createAutomationRunLog(log: InsertAutomationRunLog): Promise<AutomationRunLog>;
+  getAutomationRunLogsByRule(ruleId: string): Promise<AutomationRunLog[]>;
+  getAutomationRunLogByRuleAndLead(ruleId: string, leadId: string): Promise<AutomationRunLog | undefined>;
+  getAllAutomationRunLogs(): Promise<AutomationRunLog[]>;
 
   // Call Logs
   getCallLog(id: string): Promise<CallLog | undefined>;
@@ -543,6 +550,27 @@ export class DatabaseStorage implements IStorage {
 
   async getActiveAutomationRules(): Promise<AutomationRule[]> {
     return db.select().from(automationRules).where(eq(automationRules.isActive, true)).orderBy(desc(automationRules.createdAt));
+  }
+
+  // Automation Run Logs
+  async createAutomationRunLog(log: InsertAutomationRunLog): Promise<AutomationRunLog> {
+    const [created] = await db.insert(automationRunLogs).values(log).returning();
+    return created;
+  }
+
+  async getAutomationRunLogsByRule(ruleId: string): Promise<AutomationRunLog[]> {
+    return db.select().from(automationRunLogs).where(eq(automationRunLogs.ruleId, ruleId)).orderBy(desc(automationRunLogs.triggeredAt));
+  }
+
+  async getAutomationRunLogByRuleAndLead(ruleId: string, leadId: string): Promise<AutomationRunLog | undefined> {
+    const [log] = await db.select().from(automationRunLogs).where(
+      and(eq(automationRunLogs.ruleId, ruleId), eq(automationRunLogs.leadId, leadId))
+    );
+    return log || undefined;
+  }
+
+  async getAllAutomationRunLogs(): Promise<AutomationRunLog[]> {
+    return db.select().from(automationRunLogs).orderBy(desc(automationRunLogs.triggeredAt));
   }
 
   // Call Logs

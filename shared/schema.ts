@@ -252,6 +252,18 @@ export const automationRules = pgTable("automation_rules", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Automation Run Logs - tracks when rules have executed to prevent duplicates
+export const automationRunLogs = pgTable("automation_run_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ruleId: varchar("rule_id").notNull().references(() => automationRules.id, { onDelete: "cascade" }),
+  leadId: varchar("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  triggeredAt: timestamp("triggered_at").notNull().defaultNow(),
+  actionType: text("action_type").notNull(), // whatsapp, notification, followup
+  actionResult: text("action_result"), // success, failed, skipped
+  details: text("details"),
+});
+
 // Call Logs
 export const callLogs = pgTable("call_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -337,6 +349,7 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true,
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true, createdAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
 export const insertAutomationRuleSchema = createInsertSchema(automationRules).omit({ id: true, createdAt: true });
+export const insertAutomationRunLogSchema = createInsertSchema(automationRunLogs).omit({ id: true, triggeredAt: true });
 export const insertCallLogSchema = createInsertSchema(callLogs).omit({ id: true, createdAt: true });
 export const insertChecklistSchema = createInsertSchema(checklists).omit({ id: true, createdAt: true });
 export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true, createdAt: true });
@@ -375,6 +388,8 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type AutomationRule = typeof automationRules.$inferSelect;
 export type InsertAutomationRule = z.infer<typeof insertAutomationRuleSchema>;
+export type AutomationRunLog = typeof automationRunLogs.$inferSelect;
+export type InsertAutomationRunLog = z.infer<typeof insertAutomationRunLogSchema>;
 export type CallLog = typeof callLogs.$inferSelect;
 export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
 export type Checklist = typeof checklists.$inferSelect;
