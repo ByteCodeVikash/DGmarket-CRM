@@ -1879,7 +1879,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const followUps = await storage.getAllFollowUps();
       const leadFollowUps = followUps.filter(f => f.leadId === lead.id);
       const notes = await storage.getLeadNotes(lead.id);
-      const callLogs = await storage.getCallLogs();
+      const callLogs = await storage.getAllCallLogs();
       const leadCallLogs = callLogs.filter(c => c.leadId === lead.id);
 
       const { score, leadScore, reason } = calculateLeadScore(lead, leadFollowUps, notes, leadCallLogs);
@@ -1906,7 +1906,7 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const leads = await storage.getAllLeads();
       const followUps = await storage.getAllFollowUps();
-      const callLogs = await storage.getCallLogs();
+      const callLogs = await storage.getAllCallLogs();
       let updated = 0;
 
       for (const lead of leads) {
