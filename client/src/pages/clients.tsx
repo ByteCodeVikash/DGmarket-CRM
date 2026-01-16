@@ -80,8 +80,20 @@ export default function ClientsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const buildClientsUrl = () => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.append("search", searchQuery);
+    const queryString = params.toString();
+    return queryString ? `/api/clients?${queryString}` : "/api/clients";
+  };
+
   const { data: clients = [], isLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients", { search: searchQuery }],
+    queryKey: ["/api/clients", searchQuery],
+    queryFn: async () => {
+      const res = await fetch(buildClientsUrl(), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch clients");
+      return res.json();
+    },
   });
 
   const form = useForm<ClientFormData>({
@@ -146,10 +158,15 @@ export default function ClientsPage() {
   });
 
   const handleSubmit = (data: ClientFormData) => {
+    const cleanedData = {
+      ...data,
+      contractStartDate: data.contractStartDate || undefined,
+      contractEndDate: data.contractEndDate || undefined,
+    };
     if (editingClient) {
-      updateMutation.mutate({ id: editingClient.id, data });
+      updateMutation.mutate({ id: editingClient.id, data: cleanedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(cleanedData);
     }
   };
 
