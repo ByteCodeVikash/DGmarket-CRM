@@ -508,7 +508,20 @@ export async function registerRoutes(server: Server, app: Express) {
 
   app.post("/api/client-services", requireAuth, async (req, res) => {
     try {
-      const clientService = await storage.createClientService(req.body);
+      const { clientId, serviceId, status = "active" } = req.body;
+      
+      // Get the service to fetch its default price
+      const service = await storage.getService(serviceId);
+      if (!service) {
+        return res.status(404).json({ message: "Service not found" });
+      }
+      
+      const clientService = await storage.createClientService({
+        clientId,
+        serviceId,
+        status,
+        price: req.body.price || service.basePrice,
+      });
       res.status(201).json(clientService);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

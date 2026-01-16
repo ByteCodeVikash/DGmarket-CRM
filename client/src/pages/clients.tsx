@@ -14,6 +14,8 @@ import {
   Phone,
   Mail,
   Loader2,
+  Settings,
+  X,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -56,7 +58,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Client } from "@shared/schema";
+import { Client, Service, ClientService } from "@shared/schema";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const clientFormSchema = z.object({
   companyName: z.string().min(2, "Company name is required"),
@@ -77,6 +86,8 @@ export default function ClientsPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [managingServicesClient, setManagingServicesClient] = useState<Client | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -93,6 +104,63 @@ export default function ClientsPage() {
       const res = await fetch(buildClientsUrl(), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch clients");
       return res.json();
+    },
+  });
+
+  const { data: services = [] } = useQuery<Service[]>({
+    queryKey: ["/api/services"],
+  });
+
+  const { data: clientServices = [], refetch: refetchClientServices } = useQuery<ClientService[]>({
+    queryKey: ["/api/client-services", managingServicesClient?.id],
+    queryFn: async () => {
+      if (!managingServicesClient) return [];
+      const res = await fetch(`/api/client-services?clientId=${managingServicesClient.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch client services");
+      return res.json();
+    },
+    enabled: !!managingServicesClient,
+  });
+
+  const addServiceMutation = useMutation({
+    mutationFn: async ({ clientId, serviceId }: { clientId: string; serviceId: string }) => {
+      const response = await apiRequest("POST", "/api/client-services", { clientId, serviceId, status: "active" });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchClientServices();
+      setSelectedServiceId("");
+      toast({ title: "Service added", description: "Service has been assigned to the client." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeServiceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/client-services/${id}`);
+    },
+    onSuccess: () => {
+      refetchClientServices();
+      toast({ title: "Service removed", description: "Service has been removed from the client." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateServiceStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const response = await apiRequest("PATCH", `/api/client-services/${id}`, { status });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchClientServices();
+      toast({ title: "Status updated", description: "Service status has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
 
@@ -256,6 +324,13 @@ export default function ClientsPage() {
             <DropdownMenuItem onClick={() => handleEdit(client)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem 
+              onClick={() => setManagingServicesClient(client)}
+              data-testid={`button-manage-services-${client.id}`}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Manage Services
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -485,6 +560,88 @@ export default function ClientsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog 
+        open={managingServicesClient !== null} 
+        onOpenChange={(open) => !open && setManagingServicesClient(null)}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Services</DialogTitle>
+            <DialogDescription>
+              Assign and manage services for {managingServicesClient?.companyName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Select value={selectedServiceId} onValueChange={setSelectedServiceId}>
+                <SelectTrigger className="flex-1" data-testid="select-service">
+                  <SelectValue placeholder="Select a service to add" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services
+                    .filter(s => !clientServices.some(cs => cs.serviceId === s.id))
+                    .map(service => (
+                      <SelectItem key={service.id} value={service.id}>
+                        {service.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={() => managingServicesClient && selectedServiceId && 
+                  addServiceMutation.mutate({ clientId: managingServicesClient.id, serviceId: selectedServiceId })}
+                disabled={!selectedServiceId || addServiceMutation.isPending}
+                data-testid="button-add-service"
+              >
+                {addServiceMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-muted-foreground">Assigned Services</h4>
+              {clientServices.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No services assigned yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {clientServices.map(cs => {
+                    const service = services.find(s => s.id === cs.serviceId);
+                    return (
+                      <div key={cs.id} className="flex items-center justify-between p-3 border rounded-md">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium">{service?.name || "Unknown Service"}</span>
+                          <Select 
+                            value={cs.status} 
+                            onValueChange={(status) => updateServiceStatusMutation.mutate({ id: cs.id, status })}
+                          >
+                            <SelectTrigger className="w-28 h-7" data-testid={`select-status-${cs.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="paused">Paused</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => removeServiceMutation.mutate(cs.id)}
+                          data-testid={`button-remove-service-${cs.id}`}
+                        >
+                          <X className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
