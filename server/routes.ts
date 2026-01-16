@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { setupAuth, seedAdminUser, hashPassword } from "./auth";
 import { User, Lead, Client, leadSources } from "@shared/schema";
 import { z } from "zod";
+import cors from "cors";
 
 function requireAuth(req: any, res: any, next: any) {
   if (!req.isAuthenticated()) {
@@ -28,9 +29,38 @@ function requireRole(...roles: string[]) {
 export async function registerRoutes(server: Server, app: Express) {
   // Setup authentication
   setupAuth(app);
-  
+
   // Seed admin user
   await seedAdminUser();
+
+  // Configure CORS for Vercel deployment
+  const allowedOrigins = [
+    /^https:\/\/.*\.vercel\.app$/, // All Vercel preview/production URLs
+    "http://localhost:5173", // Local Vite dev server
+    "http://localhost:5000", // Local production build
+  ];
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) return callback(null, true);
+
+      // Check if origin matches allowed patterns
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (typeof allowed === "string") {
+          return origin === allowed;
+        }
+        return allowed.test(origin);
+      });
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true, // Allow cookies/sessions
+  }));
 
   // Lead Capture API - Public endpoint for external website forms
   const captureLeadSchema = z.object({
@@ -53,7 +83,7 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       // Validate request body with Zod
       const parseResult = captureLeadSchema.safeParse(req.body);
-      
+
       if (!parseResult.success) {
         return res.status(400).json({
           success: false,
@@ -64,15 +94,15 @@ export async function registerRoutes(server: Server, app: Express) {
           }))
         });
       }
-      
+
       const data = parseResult.data;
-      
+
       // Check for duplicate lead by mobile or email
       const existingLead = await storage.findLeadByMobileOrEmail(
         data.mobile,
         data.email || undefined
       );
-      
+
       if (existingLead) {
         return res.status(409).json({
           success: false,
@@ -80,7 +110,7 @@ export async function registerRoutes(server: Server, app: Express) {
           leadId: existingLead.id
         });
       }
-      
+
       // Create the lead with proper source and UTM tracking
       const lead = await storage.createLead({
         name: data.name,
@@ -99,7 +129,7 @@ export async function registerRoutes(server: Server, app: Express) {
         utmContent: data.utmContent || null,
         utmTerm: data.utmTerm || null,
       });
-      
+
       res.status(201).json({
         success: true,
         message: "Lead captured successfully",
@@ -121,25 +151,25 @@ export async function registerRoutes(server: Server, app: Express) {
       const clients = await storage.getAllClients();
       const followUps = await storage.getAllFollowUps();
       const invoices = await storage.getAllInvoices();
-      
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
+
       const todayFollowUps = followUps.filter(f => {
         const scheduled = new Date(f.scheduledAt);
         return scheduled >= today && scheduled < tomorrow && !f.isCompleted;
       }).length;
-      
+
       const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.paidAmount), 0);
       const pendingPayments = invoices
         .filter(inv => inv.status !== "paid" && inv.status !== "cancelled")
         .reduce((sum, inv) => sum + (Number(inv.total) - Number(inv.paidAmount)), 0);
-      
+
       const convertedLeads = leads.filter(l => l.status === "converted").length;
       const conversionRate = leads.length > 0 ? Math.round((convertedLeads / leads.length) * 100) : 0;
-      
+
       // Recent leads
       const recentLeads = leads.slice(0, 5).map(l => ({
         id: l.id,
@@ -148,7 +178,7 @@ export async function registerRoutes(server: Server, app: Express) {
         status: l.status,
         createdAt: l.createdAt,
       }));
-      
+
       // Upcoming follow-ups
       const upcomingFollowUps = await Promise.all(
         followUps
@@ -167,7 +197,7 @@ export async function registerRoutes(server: Server, app: Express) {
             };
           })
       );
-      
+
       // Monthly leads
       const monthlyLeads: { month: string; count: number }[] = [];
       for (let i = 5; i >= 0; i--) {
@@ -183,19 +213,19 @@ export async function registerRoutes(server: Server, app: Express) {
         }).length;
         monthlyLeads.push({ month, count });
       }
-      
+
       // Leads by source
       const sourceMap = new Map<string, number>();
       leads.forEach(l => {
         sourceMap.set(l.source, (sourceMap.get(l.source) || 0) + 1);
       });
       const leadsBySource = Array.from(sourceMap.entries()).map(([source, count]) => ({ source, count }));
-      
+
       // Invoices due soon (within 2 days)
       const twoDaysFromNow = new Date(today);
       twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
       twoDaysFromNow.setHours(23, 59, 59, 999);
-      
+
       const upcomingInvoices = await Promise.all(
         invoices
           .filter(inv => {
@@ -218,14 +248,14 @@ export async function registerRoutes(server: Server, app: Express) {
             };
           })
       );
-      
+
       // Team members count (non-client users)
       const allUsers = await storage.getAllUsers();
       const activeTeamMembers = allUsers.filter(u => u.role !== "client").length;
-      
+
       // Converted leads count (leads with status="converted")
       const convertedLeadsCount = leads.filter(l => l.status === "converted").length;
-      
+
       res.json({
         totalLeads: leads.length,
         todayFollowUps,
@@ -300,30 +330,30 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       let leads = await storage.getAllLeads();
       const { search, status, source, score, sortBy, sortOrder, page, limit } = req.query;
-      
+
       if (search && typeof search === "string") {
         const searchLower = search.toLowerCase();
-        leads = leads.filter(lead => 
+        leads = leads.filter(lead =>
           lead.name.toLowerCase().includes(searchLower) ||
           lead.mobile.toLowerCase().includes(searchLower) ||
           (lead.email && lead.email.toLowerCase().includes(searchLower)) ||
           (lead.city && lead.city.toLowerCase().includes(searchLower))
         );
       }
-      
+
       if (status && typeof status === "string" && status !== "all") {
         leads = leads.filter(lead => lead.status === status);
       }
-      
+
       if (source && typeof source === "string" && source !== "all") {
         leads = leads.filter(lead => lead.source === source);
       }
-      
+
       // Temperature (score) filter
       if (score && typeof score === "string" && score !== "all") {
         leads = leads.filter(lead => lead.score === score);
       }
-      
+
       if (sortBy && typeof sortBy === "string") {
         const order = sortOrder === "asc" ? 1 : -1;
         leads.sort((a: any, b: any) => {
@@ -332,13 +362,13 @@ export async function registerRoutes(server: Server, app: Express) {
           return 0;
         });
       }
-      
+
       const totalCount = leads.length;
       const pageNum = parseInt(page as string) || 1;
       const limitNum = parseInt(limit as string) || 50;
       const startIndex = (pageNum - 1) * limitNum;
       const paginatedLeads = leads.slice(startIndex, startIndex + limitNum);
-      
+
       res.json({
         data: paginatedLeads,
         pagination: {
@@ -357,32 +387,32 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/leads/export", requireAuth, async (req, res) => {
     try {
       let leads = await storage.getAllLeads();
-      
+
       // Apply filters
       const { status, source, search } = req.query;
-      
+
       if (status && status !== "all") {
         leads = leads.filter(l => l.status === status);
       }
-      
+
       if (source && source !== "all") {
         leads = leads.filter(l => l.source === source);
       }
-      
+
       if (search && typeof search === "string") {
         const query = search.toLowerCase();
-        leads = leads.filter(l => 
+        leads = leads.filter(l =>
           l.name.toLowerCase().includes(query) ||
           l.email?.toLowerCase().includes(query) ||
           l.mobile.includes(query) ||
           l.city?.toLowerCase().includes(query)
         );
       }
-      
+
       // Generate CSV content
       const headers = ["Name", "Email", "Mobile", "City", "Source", "Status", "Notes", "Created At"];
       const csvRows = [headers.join(",")];
-      
+
       for (const lead of leads) {
         const row = [
           `"${(lead.name || "").replace(/"/g, '""')}"`,
@@ -396,9 +426,9 @@ export async function registerRoutes(server: Server, app: Express) {
         ];
         csvRows.push(row.join(","));
       }
-      
+
       const csvContent = csvRows.join("\n");
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="leads_export_${Date.now()}.csv"`);
       res.send(csvContent);
@@ -423,13 +453,13 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const user = req.user as User;
       const { mobile, email } = req.body;
-      
+
       const existingLead = await storage.findLeadByMobileOrEmail(mobile, email);
       if (existingLead) {
         const duplicateField = existingLead.mobile === mobile ? "mobile number" : "email";
         return res.status(400).json({ message: `A lead with this ${duplicateField} already exists` });
       }
-      
+
       const lead = await storage.createLead({ ...req.body, ownerId: req.body.ownerId || user.id });
       res.status(201).json(lead);
     } catch (error: any) {
@@ -440,7 +470,7 @@ export async function registerRoutes(server: Server, app: Express) {
   app.patch("/api/leads/:id", requireAuth, async (req, res) => {
     try {
       const { mobile, email } = req.body;
-      
+
       if (mobile || email) {
         const existingLead = await storage.findLeadByMobileOrEmail(mobile || "", email, req.params.id);
         if (existingLead) {
@@ -448,7 +478,7 @@ export async function registerRoutes(server: Server, app: Express) {
           return res.status(400).json({ message: `A lead with this ${duplicateField} already exists` });
         }
       }
-      
+
       const lead = await storage.updateLead(req.params.id, req.body);
       if (!lead) {
         return res.status(404).json({ message: "Lead not found" });
@@ -473,50 +503,50 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const user = req.user as User;
       const { csvData } = req.body;
-      
+
       if (!csvData || !Array.isArray(csvData)) {
         return res.status(400).json({ message: "Invalid CSV data" });
       }
-      
+
       const results = {
         success: [] as any[],
         failed: [] as { row: number; data: any; error: string }[],
         total: csvData.length,
       };
-      
+
       const validSources = ["facebook", "instagram", "google", "website", "referral"];
       const validStatuses = ["new", "interested", "follow_up", "converted", "not_interested"];
-      
+
       for (let i = 0; i < csvData.length; i++) {
         const row = csvData[i];
         const rowNum = i + 1;
-        
+
         // Validate required fields
         if (!row.name || typeof row.name !== "string" || row.name.trim().length < 2) {
           results.failed.push({ row: rowNum, data: row, error: "Name is required (min 2 characters)" });
           continue;
         }
-        
+
         if (!row.mobile || typeof row.mobile !== "string" || row.mobile.trim().length < 10) {
           results.failed.push({ row: rowNum, data: row, error: "Mobile is required (min 10 digits)" });
           continue;
         }
-        
+
         // Validate optional fields
-        const source = row.source && validSources.includes(row.source.toLowerCase()) 
-          ? row.source.toLowerCase() 
+        const source = row.source && validSources.includes(row.source.toLowerCase())
+          ? row.source.toLowerCase()
           : "website";
-        const status = row.status && validStatuses.includes(row.status.toLowerCase()) 
-          ? row.status.toLowerCase() 
+        const status = row.status && validStatuses.includes(row.status.toLowerCase())
+          ? row.status.toLowerCase()
           : "new";
-        
+
         // Check for duplicates
         const existingLead = await storage.findLeadByMobileOrEmail(row.mobile.trim(), row.email?.trim());
         if (existingLead) {
           results.failed.push({ row: rowNum, data: row, error: "Duplicate lead (mobile or email already exists)" });
           continue;
         }
-        
+
         try {
           const lead = await storage.createLead({
             name: row.name.trim(),
@@ -533,7 +563,7 @@ export async function registerRoutes(server: Server, app: Express) {
           results.failed.push({ row: rowNum, data: row, error: err.message });
         }
       }
-      
+
       res.json(results);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -563,10 +593,10 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/follow-ups/export/ics", requireAuth, async (req, res) => {
     try {
       const followUps = await storage.getAllFollowUps();
-      
+
       // Filter to only upcoming/pending follow-ups
       const pendingFollowUps = followUps.filter(f => !f.isCompleted);
-      
+
       // Build ICS file content
       const icsLines: string[] = [
         "BEGIN:VCALENDAR",
@@ -575,12 +605,12 @@ export async function registerRoutes(server: Server, app: Express) {
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
       ];
-      
+
       for (const followUp of pendingFollowUps) {
         // Get lead/client info for event title
         let contactName = "Contact";
         let contactPhone = "";
-        
+
         if (followUp.leadId) {
           const lead = await storage.getLead(followUp.leadId);
           if (lead) {
@@ -594,15 +624,15 @@ export async function registerRoutes(server: Server, app: Express) {
             contactPhone = client.phone || "";
           }
         }
-        
+
         const scheduledDate = new Date(followUp.scheduledAt);
         const endDate = new Date(scheduledDate.getTime() + 30 * 60 * 1000); // 30 min duration
-        
+
         // Format dates for ICS (YYYYMMDDTHHMMSSZ)
         const formatICSDate = (date: Date) => {
           return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
         };
-        
+
         // Escape special characters per RFC5545
         const escapeICS = (text: string) => {
           return text
@@ -611,15 +641,15 @@ export async function registerRoutes(server: Server, app: Express) {
             .replace(/,/g, "\\,")
             .replace(/\n/g, "\\n");
         };
-        
-        const title = contactPhone 
+
+        const title = contactPhone
           ? `Follow-up: ${contactName} (${contactPhone})`
           : `Follow-up: ${contactName}`;
-        
-        const description = followUp.notes 
+
+        const description = followUp.notes
           ? escapeICS(followUp.notes)
           : "";
-        
+
         icsLines.push("BEGIN:VEVENT");
         icsLines.push(`UID:${followUp.id}@marketpro-crm`);
         icsLines.push(`DTSTAMP:${formatICSDate(new Date())}`);
@@ -632,11 +662,11 @@ export async function registerRoutes(server: Server, app: Express) {
         icsLines.push("STATUS:CONFIRMED");
         icsLines.push("END:VEVENT");
       }
-      
+
       icsLines.push("END:VCALENDAR");
-      
+
       const icsContent = icsLines.join("\r\n");
-      
+
       res.setHeader("Content-Type", "text/calendar; charset=utf-8");
       res.setHeader("Content-Disposition", "attachment; filename=follow-ups.ics");
       res.send(icsContent);
@@ -649,7 +679,7 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const user = req.user as User;
       const followUp = await storage.createFollowUp({ ...req.body, userId: user.id });
-      
+
       let leadName = "a lead";
       if (req.body.leadId) {
         const lead = await storage.getLead(req.body.leadId);
@@ -659,7 +689,7 @@ export async function registerRoutes(server: Server, app: Express) {
           await storage.updateLead(lead.id, { lastActivityAt: new Date() });
         }
       }
-      
+
       await storage.createNotification({
         userId: user.id,
         title: "Follow-up Scheduled",
@@ -667,7 +697,7 @@ export async function registerRoutes(server: Server, app: Express) {
         type: "follow_up",
         link: `/follow-ups`,
       });
-      
+
       res.status(201).json(followUp);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -866,21 +896,21 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       const defaultPackages = [
-        { 
-          name: "Basic", 
-          description: "Essential digital marketing services", 
+        {
+          name: "Basic",
+          description: "Essential digital marketing services",
           price: "15000",
           features: JSON.stringify(["Social Media Setup", "Basic SEO", "Monthly Report"])
         },
-        { 
-          name: "Standard", 
-          description: "Comprehensive marketing solution", 
+        {
+          name: "Standard",
+          description: "Comprehensive marketing solution",
           price: "30000",
           features: JSON.stringify(["Facebook Ads", "Google Ads", "SEO Optimization", "Weekly Reports", "Content Calendar"])
         },
-        { 
-          name: "Premium", 
-          description: "Complete digital transformation", 
+        {
+          name: "Premium",
+          description: "Complete digital transformation",
           price: "50000",
           features: JSON.stringify(["All Standard Features", "Website Design", "24/7 Support", "Dedicated Manager", "Advanced Analytics"])
         },
@@ -931,13 +961,13 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/client-services", requireAuth, async (req, res) => {
     try {
       const { clientId, serviceId, status = "active" } = req.body;
-      
+
       // Get the service to fetch its default price
       const service = await storage.getService(serviceId);
       if (!service) {
         return res.status(404).json({ message: "Service not found" });
       }
-      
+
       const clientService = await storage.createClientService({
         clientId,
         serviceId,
@@ -1017,7 +1047,7 @@ export async function registerRoutes(server: Server, app: Express) {
           let assignee;
           let lead;
           let client;
-          
+
           if (t.assigneeId) {
             const user = await storage.getUser(t.assigneeId);
             if (user) {
@@ -1025,15 +1055,15 @@ export async function registerRoutes(server: Server, app: Express) {
               assignee = sanitized;
             }
           }
-          
+
           if (t.leadId) {
             lead = await storage.getLead(t.leadId);
           }
-          
+
           if (t.clientId) {
             client = await storage.getClient(t.clientId);
           }
-          
+
           return { ...t, assignee, lead, client };
         })
       );
@@ -1138,18 +1168,18 @@ export async function registerRoutes(server: Server, app: Express) {
       }
       const client = quotation.clientId ? await storage.getClient(quotation.clientId) : null;
       const lead = quotation.leadId ? await storage.getLead(quotation.leadId) : null;
-      
+
       const formatCurrency = (amount: string | number) => {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount) || 0);
       };
-      
+
       // Parse items - could be JSON string or already parsed
       let items: any[] = [];
       try {
         items = typeof quotation.items === 'string' ? JSON.parse(quotation.items) : quotation.items;
         if (!Array.isArray(items)) items = [];
       } catch { items = []; }
-      
+
       const itemsHtml = items.map((item: any) => `
         <tr>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${item.description || item.name || 'Item'}</td>
@@ -1158,7 +1188,7 @@ export async function registerRoutes(server: Server, app: Express) {
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency((item.quantity || 1) * (item.price || item.unitPrice || 0))}</td>
         </tr>
       `).join('');
-      
+
       // Get recipient name from client or lead
       const recipientName = client?.companyName || client?.contactName || lead?.name || 'N/A';
       const recipientEmail = client?.email || lead?.email || '';
@@ -1264,14 +1294,14 @@ export async function registerRoutes(server: Server, app: Express) {
         </body>
         </html>
       `;
-      
+
       res.setHeader("Content-Type", "text/html");
       res.send(html);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
-  
+
   // Email quotation (placeholder)
   app.post("/api/quotations/:id/email", requireAuth, async (req, res) => {
     try {
@@ -1279,23 +1309,23 @@ export async function registerRoutes(server: Server, app: Express) {
       if (!quotation) {
         return res.status(404).json({ message: "Quotation not found" });
       }
-      
+
       const { email } = req.body;
       if (!email) {
         return res.status(400).json({ message: "Email address is required" });
       }
-      
+
       // In production, integrate with email service like SendGrid, Nodemailer, etc.
       // For now, log and return success
       console.log(`[Email] Sending quotation ${quotation.quotationNumber} to ${email}`);
-      
+
       // Update quotation status to 'sent' if it's a draft
       if (quotation.status === 'draft') {
         await storage.updateQuotation(quotation.id, { status: 'sent' });
       }
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: `Quotation ${quotation.quotationNumber} sent to ${email}`,
         note: "Email functionality placeholder - integrate with email service for production"
       });
@@ -1366,17 +1396,17 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(404).json({ message: "Invoice not found" });
       }
       const client = await storage.getClient(invoice.clientId);
-      
+
       const formatCurrency = (amount: string | number) => {
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount) || 0);
       };
-      
+
       let items: any[] = [];
       try {
         items = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
         if (!Array.isArray(items)) items = [];
       } catch { items = []; }
-      
+
       const itemsHtml = items.map((item: any) => `
         <tr>
           <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${item.description || item.name || 'Item'}</td>
@@ -1523,26 +1553,26 @@ export async function registerRoutes(server: Server, app: Express) {
     try {
       const user = req.user as User;
       const { invoiceId, amount } = req.body;
-      
+
       // Validate payment amount
       if (!invoiceId || !amount || Number(amount) <= 0) {
         return res.status(400).json({ message: "Invalid payment amount" });
       }
-      
+
       // Check invoice exists and calculate due amount
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
-      
+
       const dueAmount = Number(invoice.total) - Number(invoice.paidAmount);
       if (dueAmount <= 0) {
         return res.status(400).json({ message: "Invoice is already fully paid" });
       }
-      
+
       // Clamp payment to due amount (prevent overpayment)
       const paymentAmount = Math.min(Number(amount), dueAmount);
-      
+
       const payment = await storage.createPayment({
         ...req.body,
         amount: paymentAmount.toString(),
@@ -1637,32 +1667,32 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/portal/data", requireAuth, async (req, res) => {
     try {
       const user = req.user as User;
-      
+
       // Find client record linked to this user (via email or direct lookup)
       const clients = await storage.getAllClients();
       const clientServices = await storage.getAllClientServices();
       const allInvoices = await storage.getAllInvoices();
       const allQuotations = await storage.getAllQuotations();
-      
+
       // Find clients where user email matches client email, or user is owner
-      const userClients = clients.filter(c => 
+      const userClients = clients.filter(c =>
         c.email === user.email || c.ownerId === user.id
       );
       const clientIds = userClients.map(c => c.id);
-      
+
       // Filter invoices and quotations for this client
       const invoices = allInvoices.filter(inv => clientIds.includes(inv.clientId));
       const quotations = allQuotations.filter(q => q.clientId && clientIds.includes(q.clientId));
-      
+
       // Calculate totals
       const totalSpent = invoices.reduce((sum, inv) => sum + Number(inv.paidAmount), 0);
       const pendingPayments = invoices
         .filter(inv => inv.status !== "paid" && inv.status !== "cancelled")
         .reduce((sum, inv) => sum + (Number(inv.total) - Number(inv.paidAmount)), 0);
-      const activeServices = clientServices.filter(cs => 
+      const activeServices = clientServices.filter(cs =>
         clientIds.includes(cs.clientId) && cs.status === "active"
       ).length;
-      
+
       res.json({
         invoices,
         quotations,
@@ -1682,7 +1712,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const clients = await storage.getAllClients();
       const invoices = await storage.getAllInvoices();
       const users = await storage.getAllUsers();
-      
+
       // Monthly leads
       const monthlyLeads: { month: string; leads: number; conversions: number }[] = [];
       for (let i = 5; i >= 0; i--) {
@@ -1701,17 +1731,17 @@ export async function registerRoutes(server: Server, app: Express) {
           conversions: monthLeads.filter(l => l.status === "converted").length,
         });
       }
-      
+
       // Leads by source
       const sourceMap = new Map<string, number>();
       leads.forEach(l => sourceMap.set(l.source, (sourceMap.get(l.source) || 0) + 1));
       const leadsBySource = Array.from(sourceMap.entries()).map(([source, count]) => ({ source, count }));
-      
+
       // Leads by status
       const statusMap = new Map<string, number>();
       leads.forEach(l => statusMap.set(l.status, (statusMap.get(l.status) || 0) + 1));
       const leadsByStatus = Array.from(statusMap.entries()).map(([status, count]) => ({ status, count }));
-      
+
       // Revenue by month
       const revenueByMonth: { month: string; revenue: number }[] = [];
       for (let i = 5; i >= 0; i--) {
@@ -1728,7 +1758,7 @@ export async function registerRoutes(server: Server, app: Express) {
           .reduce((sum, inv) => sum + Number(inv.paidAmount), 0);
         revenueByMonth.push({ month, revenue });
       }
-      
+
       // Team performance
       const teamPerformance = users
         .filter(u => u.role !== "client")
@@ -1740,11 +1770,11 @@ export async function registerRoutes(server: Server, app: Express) {
             conversions: userLeads.filter(l => l.status === "converted").length,
           };
         });
-      
+
       const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.paidAmount), 0);
       const convertedCount = leads.filter(l => l.status === "converted").length;
       const conversionRate = leads.length > 0 ? Math.round((convertedCount / leads.length) * 100) : 0;
-      
+
       res.json({
         monthlyLeads,
         leadsBySource,
@@ -1765,16 +1795,16 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/reports/export", requireAuth, async (req, res) => {
     try {
       const { type } = req.query;
-      
+
       if (type === "leads") {
         const leads = await storage.getAllLeads();
         const csv = [
           "Name,Email,Mobile,City,Source,Status,Created At",
-          ...leads.map(l => 
+          ...leads.map(l =>
             `"${l.name}","${l.email || ""}","${l.mobile}","${l.city || ""}","${l.source}","${l.status}","${l.createdAt}"`
           ),
         ].join("\n");
-        
+
         res.setHeader("Content-Type", "text/csv");
         res.setHeader("Content-Disposition", "attachment; filename=leads.csv");
         res.send(csv);
@@ -1792,9 +1822,9 @@ export async function registerRoutes(server: Server, app: Express) {
 
   // AI Lead Scoring - Calculate score based on engagement signals
   function calculateLeadScore(
-    lead: Lead, 
-    followUps: any[], 
-    notes: any[], 
+    lead: Lead,
+    followUps: any[],
+    notes: any[],
     callLogs: any[] = []
   ): { score: string; leadScore: number; reason: string } {
     let points = 50; // Start at neutral
@@ -1804,7 +1834,7 @@ export async function registerRoutes(server: Server, app: Express) {
     const callCount = callLogs.filter(c => c.leadId === lead.id).length;
     const whatsappNotes = notes.filter(n => n.type === "whatsapp" || n.type === "call").length;
     const totalInteractions = callCount + whatsappNotes;
-    
+
     if (totalInteractions >= 5) { points += 20; reasons.push(`${totalInteractions} interactions`); }
     else if (totalInteractions >= 2) { points += 10; reasons.push(`${totalInteractions} interactions`); }
     else if (totalInteractions > 0) { points += 5; reasons.push("Has interaction"); }
@@ -1825,7 +1855,7 @@ export async function registerRoutes(server: Server, app: Express) {
     // 4. Last activity time (recent activity increases score)
     const lastActivity = lead.lastActivityAt ? new Date(lead.lastActivityAt) : new Date(lead.createdAt);
     const daysSinceActivity = Math.floor((Date.now() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     if (daysSinceActivity <= 1) { points += 20; reasons.push("Active today"); }
     else if (daysSinceActivity <= 3) { points += 15; reasons.push("Active recently"); }
     else if (daysSinceActivity <= 7) { points += 10; reasons.push("Active this week"); }
@@ -1834,23 +1864,23 @@ export async function registerRoutes(server: Server, app: Express) {
     // 5. Engagement signals
     if (lead.email) { points += 5; reasons.push("Has email"); }
     if (lead.city) { points += 3; reasons.push("Location provided"); }
-    
+
     // 6. Source quality
     if (lead.source === "referral") { points += 15; reasons.push("Referral"); }
     else if (lead.source === "google") { points += 10; reasons.push("Google"); }
     else if (lead.source === "website") { points += 8; reasons.push("Website"); }
-    
+
     // 7. Pipeline progress
     if (lead.pipelineStage === "negotiation") { points += 25; reasons.push("Negotiation"); }
     else if (lead.pipelineStage === "proposal_sent") { points += 20; reasons.push("Proposal sent"); }
     else if (lead.pipelineStage === "qualified") { points += 15; reasons.push("Qualified"); }
     else if (lead.pipelineStage === "contacted") { points += 5; reasons.push("Contacted"); }
-    
+
     // 8. Status signals
     if (lead.status === "interested") { points += 15; reasons.push("Interested"); }
     else if (lead.status === "converted") { points += 30; reasons.push("Converted"); }
     else if (lead.status === "not_interested") { points -= 30; reasons.push("Not interested"); }
-    
+
     // 9. Follow-up engagement
     const completedFollowUps = followUps.filter(f => f.isCompleted).length;
     if (completedFollowUps >= 3) { points += 15; reasons.push(`${completedFollowUps} completed follow-ups`); }
@@ -1883,9 +1913,9 @@ export async function registerRoutes(server: Server, app: Express) {
       const leadCallLogs = callLogs.filter(c => c.leadId === lead.id);
 
       const { score, leadScore, reason } = calculateLeadScore(lead, leadFollowUps, notes, leadCallLogs);
-      
+
       const updated = await storage.updateLead(lead.id, { score, leadScore, scoreReason: reason });
-      
+
       // Log activity
       await storage.createActivityLog({
         userId: (req.user as User).id,
@@ -1927,7 +1957,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // AUTOMATION RULES
   // ==========================================
-  
+
   app.get("/api/automation-rules", requireAuth, requireRole("admin", "manager"), async (req, res) => {
     try {
       const rules = await storage.getAllAutomationRules();
@@ -1956,7 +1986,7 @@ export async function registerRoutes(server: Server, app: Express) {
         ...parseResult.data,
         createdById: (req.user as User).id,
       });
-      
+
       await storage.createActivityLog({
         userId: (req.user as User).id,
         action: "created",
@@ -2018,41 +2048,41 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/generate-message", requireAuth, async (req, res) => {
     try {
       const { type, leadId, clientId, languageStyle } = req.body;
-      
+
       // Input validation
       const validTypes = ['whatsapp_followup', 'proposal_followup', 'payment_reminder', 'meeting_scheduling'];
       const validLanguages = ['professional', 'professional_hindi'];
-      
+
       if (!type || !validTypes.includes(type)) {
         return res.status(400).json({ error: `Invalid message type. Must be one of: ${validTypes.join(', ')}` });
       }
-      
+
       if (!languageStyle || !validLanguages.includes(languageStyle)) {
         return res.status(400).json({ error: `Invalid language style. Must be one of: ${validLanguages.join(', ')}` });
       }
-      
+
       if (!leadId && !clientId) {
         return res.status(400).json({ error: 'Either leadId or clientId is required' });
       }
-      
+
       const { generateMessage, generateWhatsAppLink } = await import("./messageGenerator");
-      
+
       let context: any = { name: 'there' };
       let phone = '';
-      
+
       if (leadId) {
         const lead = await storage.getLead(leadId);
         if (lead) {
           context.name = lead.name;
           context.serviceInterest = lead.source || 'our services';
           phone = lead.mobile;
-          
+
           const allFollowUps = await storage.getAllFollowUps();
           const leadFollowUps = allFollowUps.filter(f => f.leadId === leadId);
           if (leadFollowUps.length > 0) {
             context.lastFollowUp = leadFollowUps[0].scheduledAt;
           }
-          
+
           const allQuotations = await storage.getAllQuotations();
           const leadQuotations = allQuotations.filter(q => q.leadId === leadId);
           if (leadQuotations.length > 0) {
@@ -2060,14 +2090,14 @@ export async function registerRoutes(server: Server, app: Express) {
           }
         }
       }
-      
+
       if (clientId) {
         const client = await storage.getClient(clientId);
         if (client) {
           context.name = client.contactName;
           context.serviceInterest = client.companyName || 'our services';
           phone = client.phone;
-          
+
           const allInvoices = await storage.getAllInvoices();
           const clientInvoices = allInvoices.filter(i => i.clientId === clientId);
           const pendingInvoice = clientInvoices.find((inv: any) => inv.status !== 'paid');
@@ -2077,10 +2107,10 @@ export async function registerRoutes(server: Server, app: Express) {
           }
         }
       }
-      
+
       const message = generateMessage(type, context, languageStyle || 'english');
       const whatsappLink = phone ? generateWhatsAppLink(phone, message) : '';
-      
+
       res.json({ message, whatsappLink, phone });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2090,7 +2120,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // CALL LOGS
   // ==========================================
-  
+
   app.get("/api/call-logs", requireAuth, async (req, res) => {
     try {
       const { leadId, clientId } = req.query;
@@ -2131,7 +2161,7 @@ export async function registerRoutes(server: Server, app: Express) {
         calledAt: data.calledAt ? new Date(data.calledAt) : new Date(),
         userId: (req.user as User).id,
       });
-      
+
       await storage.createActivityLog({
         userId: (req.user as User).id,
         action: "call_logged",
@@ -2167,7 +2197,7 @@ export async function registerRoutes(server: Server, app: Express) {
       const allLeads = await storage.getAllLeads();
       const allClients = await storage.getAllClients();
       const allUsers = await storage.getAllUsers();
-      
+
       const enriched = conversations.map(conv => ({
         ...conv,
         lead: conv.leadId ? allLeads.find(l => l.id === conv.leadId) : null,
@@ -2189,13 +2219,13 @@ export async function registerRoutes(server: Server, app: Express) {
       }
       const messages = await storage.getWhatsappMessagesByConversation(req.params.id);
       const allUsers = await storage.getAllUsers();
-      
+
       // Enrich messages with sender info
       const enrichedMessages = messages.map(msg => ({
         ...msg,
         sentByUser: msg.sentByUserId ? allUsers.find(u => u.id === msg.sentByUserId) : null,
       }));
-      
+
       res.json({ conversation, messages: enrichedMessages });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2209,25 +2239,25 @@ export async function registerRoutes(server: Server, app: Express) {
       if (!phone) {
         return res.status(400).json({ message: "Phone number is required" });
       }
-      
+
       // Check if conversation already exists
       let conversation = await storage.getWhatsappConversationByPhone(phone);
       if (conversation) {
         return res.json(conversation);
       }
-      
+
       // Auto-detect lead/client by phone if not provided
       let detectedLeadId = leadId;
       let detectedClientId = clientId;
       let detectedContactName = contactName;
-      
+
       if (!detectedLeadId && !detectedClientId) {
         const allLeads = await storage.getAllLeads();
         const allClients = await storage.getAllClients();
-        
+
         const matchingLead = allLeads.find(l => l.mobile === phone);
         const matchingClient = allClients.find(c => c.phone === phone);
-        
+
         if (matchingLead) {
           detectedLeadId = matchingLead.id;
           detectedContactName = detectedContactName || matchingLead.name;
@@ -2237,7 +2267,7 @@ export async function registerRoutes(server: Server, app: Express) {
           detectedContactName = detectedContactName || matchingClient.contactName;
         }
       }
-      
+
       conversation = await storage.createWhatsappConversation({
         phone,
         leadId: detectedLeadId,
@@ -2284,7 +2314,7 @@ export async function registerRoutes(server: Server, app: Express) {
       if (!conversationId || !content) {
         return res.status(400).json({ message: "conversationId and content are required" });
       }
-      
+
       const user = req.user as any;
       const message = await storage.createWhatsappMessage({
         conversationId,
@@ -2352,19 +2382,19 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // ACTIVITY LOGS (Audit Trail)
   // ==========================================
-  
+
   app.get("/api/activity-logs", requireAuth, requireRole("admin", "manager"), async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 100;
       const logs = await storage.getActivityLogs(limit);
-      
+
       // Enrich with user names
       const users = await storage.getAllUsers();
       const enriched = logs.map(log => ({
         ...log,
         userName: users.find(u => u.id === log.userId)?.name || "Unknown",
       }));
-      
+
       res.json(enriched);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2374,7 +2404,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // DUPLICATE LEAD DETECTION
   // ==========================================
-  
+
   app.get("/api/leads/duplicates", requireAuth, requireRole("admin", "manager", "sales"), async (req, res) => {
     try {
       const leads = await storage.getAllLeads();
@@ -2383,13 +2413,13 @@ export async function registerRoutes(server: Server, app: Express) {
 
       for (const lead of leads) {
         if (processed.has(lead.id)) continue;
-        
-        const matches = leads.filter(l => 
-          l.id !== lead.id && 
+
+        const matches = leads.filter(l =>
+          l.id !== lead.id &&
           !processed.has(l.id) &&
           (l.mobile === lead.mobile || (l.email && lead.email && l.email === lead.email))
         );
-        
+
         if (matches.length > 0) {
           duplicates.push({ lead, matches });
           processed.add(lead.id);
@@ -2407,7 +2437,7 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/leads/merge", requireAuth, requireRole("admin", "manager"), async (req, res) => {
     try {
       const { primaryId, duplicateIds } = req.body;
-      
+
       if (!primaryId || !duplicateIds || !Array.isArray(duplicateIds)) {
         return res.status(400).json({ message: "Primary ID and duplicate IDs required" });
       }
@@ -2458,7 +2488,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // LEAD DISTRIBUTION (Round Robin)
   // ==========================================
-  
+
   app.get("/api/distribution-settings", requireAuth, requireRole("admin", "manager"), async (req, res) => {
     try {
       let settings = await storage.getDistributionSettings();
@@ -2490,7 +2520,7 @@ export async function registerRoutes(server: Server, app: Express) {
       for (const lead of unassigned) {
         const assignee = await storage.getNextAssignee();
         if (assignee) {
-          await storage.updateLead(lead.id, { 
+          await storage.updateLead(lead.id, {
             ownerId: assignee.id,
             distributedAt: new Date(),
           });
@@ -2516,7 +2546,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // MARKETING CHECKLISTS
   // ==========================================
-  
+
   app.get("/api/checklists", requireAuth, async (req, res) => {
     try {
       const { clientId } = req.query;
@@ -2625,7 +2655,7 @@ export async function registerRoutes(server: Server, app: Express) {
   // ==========================================
   // KPI DASHBOARD ADVANCED STATS
   // ==========================================
-  
+
   app.get("/api/dashboard/kpis", requireAuth, async (req, res) => {
     try {
       const leads = await storage.getAllLeads();
@@ -2642,7 +2672,7 @@ export async function registerRoutes(server: Server, app: Express) {
       // This month metrics
       const thisMonthLeads = leads.filter(l => new Date(l.createdAt) >= thisMonth);
       const lastMonthLeads = leads.filter(l => new Date(l.createdAt) >= lastMonth && new Date(l.createdAt) <= lastMonthEnd);
-      
+
       const thisMonthConversions = thisMonthLeads.filter(l => l.status === "converted").length;
       const lastMonthConversions = lastMonthLeads.filter(l => l.status === "converted").length;
 
@@ -2668,8 +2698,8 @@ export async function registerRoutes(server: Server, app: Express) {
 
       // Average deal size
       const paidInvoices = invoices.filter(i => Number(i.paidAmount) > 0);
-      const avgDealSize = paidInvoices.length > 0 
-        ? paidInvoices.reduce((sum, i) => sum + Number(i.paidAmount), 0) / paidInvoices.length 
+      const avgDealSize = paidInvoices.length > 0
+        ? paidInvoices.reduce((sum, i) => sum + Number(i.paidAmount), 0) / paidInvoices.length
         : 0;
 
       res.json({
